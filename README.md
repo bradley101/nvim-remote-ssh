@@ -113,8 +113,15 @@ ends.
 While a connection is being set up a small window shows the current step
 ("Connecting via jump1 → jump2", "Authenticating as me@host", "Inspecting
 server", ...) and how long it has taken, so a slow chain of jump hosts does
-not look like a hang. It steps aside for password and other prompts. Turn it
-off with `ui = { progress = false }`.
+not look like a hang. Turn it off with `ui = { progress = false }`.
+
+Passwords, key passphrases, host key confirmations and other questions are
+asked in a dialog in the middle of the screen, and the rest of the screen is
+darkened while one of these windows is showing (a terminal cannot blur, so it
+is dimmed; this needs `termguicolors`). `ui = { dialogs = false }` goes back
+to the command line, and `ui = { dim = 0 }` turns the darkening off (default
+40, up to 100). The dialogs use the highlight groups `RemoteSSHDialogField`,
+`RemoteSSHDialogChoice`, `RemoteSSHDialogHint` and `RemoteSSHBackdrop`.
 
 Connections to jump hosts are shared, also between Neovim windows: once a
 jump host is connected (as a workspace of its own, or on the way to another

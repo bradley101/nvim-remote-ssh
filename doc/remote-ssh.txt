@@ -44,6 +44,10 @@ While a connection is being set up, a small window shows the current step and
 the time it has taken. It is hidden while a password or other prompt is on
 screen. Disable it with `ui = { progress = false }`.
 
+Passwords and other questions are asked in a centred dialog, with the rest of
+the screen darkened (needs 'termguicolors'). `ui = { dialogs = false }` uses
+the command line instead; `ui = { dim = 0 }` disables the darkening.
+
 When local files or another remote host are already open, `:RemoteSSH open` starts the workspace in
 a separate Neovim in a new terminal window (detected: tmux, WezTerm, kitty,
 Alacritty, iTerm2, Terminal.app). Options: >lua

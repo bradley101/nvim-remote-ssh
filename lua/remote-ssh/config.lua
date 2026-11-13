@@ -100,6 +100,12 @@ M.defaults = {
   ui = {
     -- Floating "Connecting…" window while a connection is being set up.
     progress = true,
+    -- Ask for passwords, confirmations and text in a centred dialog instead
+    -- of the command line.
+    dialogs = true,
+    -- How strongly (0-100) the rest of the screen is darkened while one of
+    -- our dialogs is showing; 0 or false = not at all. Needs 'termguicolors'.
+    dim = 40,
     notify = nil, -- function(msg, level, opts)
     confirm = nil, -- function(msg, choices) -> index (0 = cancelled)
     input = nil, -- function(prompt, default) -> string|nil

@@ -140,3 +140,43 @@ test("open starts a separate Neovim when local files are open", function()
   rs.workspaces = saved_ws
   config.open.cmd = nil
 end)
+
+local function keys(s)
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(s, true, true, true), "t", false)
+end
+
+test("dialogs: password, text and choice are read from the keyboard", function()
+  local dialog = require("remote-ssh.dialog")
+  local before = #vim.api.nvim_list_wins()
+  keys("wrong<C-u>s3cret<BS>t<CR>")
+  eq(dialog.secret("root@host's password:"), "s3cret")
+  keys("<Esc>")
+  eq(dialog.secret("root@host's password:"), nil)
+
+  keys("/sub<CR>")
+  eq(dialog.input("Folder:", "/home/dev"), "/home/dev/sub")
+  keys("<C-w>new<CR>")
+  eq(dialog.input("Folder:", "/home/dev/old"), "/home/dev/new")
+
+  keys("<CR>")
+  eq(dialog.confirm("Continue?", { "Yes", "No" }), 1)
+  keys("<Right><CR>")
+  eq(dialog.confirm("Continue?", { "Yes", "No" }), 2)
+  keys("n")
+  eq(dialog.confirm("Continue?", { "Yes", "No" }), 2)
+  keys("<Esc>")
+  eq(dialog.confirm("Continue?", { "Yes", "No" }), 0)
+  eq(#vim.api.nvim_list_wins(), before, "a dialog window was left open")
+end)
+
+test("dialogs: pasted text goes to the dialog, not the buffer", function()
+  local dialog = require("remote-ssh.dialog")
+  vim.cmd("enew!")
+  vim.defer_fn(function()
+    vim.paste({ "pa55" }, -1)
+    keys("<CR>")
+  end, 50)
+  eq(dialog.secret("password:"), "pa55")
+  eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "" })
+  vim.cmd("enew!")
+end)

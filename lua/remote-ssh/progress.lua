@@ -35,6 +35,7 @@ local function close_win()
     pcall(api.nvim_win_close, win, true)
   end
   win = nil
+  require("remote-ssh.dialog").dim("progress", false)
 end
 
 local function flush()
@@ -86,6 +87,7 @@ local function render()
       cfg.title = " Remote SSH "
       cfg.title_pos = "center"
     end
+    require("remote-ssh.dialog").dim("progress", true)
     win = api.nvim_open_win(buf, false, cfg)
     vim.wo[win].winhighlight = "Normal:NormalFloat"
     vim.wo[win].wrap = false
