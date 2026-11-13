@@ -64,9 +64,16 @@ lazy.nvim:
 {
   "bradley101/nvim-remote-ssh",
   dependencies = { "nvim-telescope/telescope.nvim", "nvim-lua/plenary.nvim" },
+  lazy = false,
   opts = {},
 }
 ```
+
+`lazy = false` matters if your lazy.nvim setup lazy-loads by default (LazyVim
+and other distributions set `defaults.lazy = true`): without it the plugin
+stays under "Not Loaded" and `:RemoteSSH` does not exist. Loading is cheap;
+nothing connects until you run a command. To lazy-load instead, use
+`cmd = "RemoteSSH", event = "BufReadCmd rssh://*"` in place of `lazy = false`.
 
 ## Usage
 
