@@ -28,9 +28,76 @@ function M.setup(opts)
   api.nvim_create_autocmd("VimLeavePre", {
     group = api.nvim_create_augroup("RemoteSSHExit", { clear = true }),
     callback = function()
+      M.save_exit_state()
       mod("connection").close_all()
     end,
   })
+end
+
+--- Remember, per host, whether its explorer is showing, so a restored
+--- session can bring it back.
+function M.save_exit_state()
+  local state = mod("state")
+  local shown = {}
+  for bufnr, t in pairs(mod("tree").trees) do
+    if api.nvim_buf_is_valid(bufnr) and vim.fn.bufwinid(bufnr) ~= -1 then
+      shown[t.host] = true
+    end
+  end
+  for host in pairs(mod("connection").conns) do
+    state.host(host).tree = shown[host] or nil
+  end
+  -- Cursor positions: a session restores them onto still-empty buffers, so
+  -- they are kept here and applied once the file has been loaded.
+  for bufnr, meta in pairs(mod("buffer").meta) do
+    if not meta.failed and api.nvim_buf_is_valid(bufnr) then
+      local win = vim.fn.bufwinid(bufnr)
+      if win ~= -1 then
+        state.set_cursor(mod("path").uri(meta.host, meta.path), api.nvim_win_get_cursor(win))
+      end
+    end
+  end
+  state.save()
+end
+
+--- Called after files from a previous session were reloaded on `host`:
+--- re-establish the workspace they belonged to and its explorer.
+function M.restored(host)
+  local state = mod("state")
+  if not M.workspaces[host] then
+    local paths = {}
+    for bufnr, meta in pairs(mod("buffer").meta) do
+      if meta.host == host and api.nvim_buf_is_valid(bufnr) then
+        paths[#paths + 1] = meta.path
+      end
+    end
+    for _, r in ipairs(state.recent()) do
+      if r.host == host then
+        for _, path in ipairs(paths) do
+          if r.path == "/" or path:sub(1, #r.path + 1) == r.path .. "/" then
+            M.workspaces[host] = r.path
+            break
+          end
+        end
+      end
+      if M.workspaces[host] then
+        break
+      end
+    end
+  end
+  local root = M.workspaces[host]
+  if not root then
+    return
+  end
+  M.current = M.current or { host = host, root = root }
+  if state.host(host).tree or mod("buffer").tree_wanted[host] then
+    mod("buffer").tree_wanted[host] = nil
+    local win = api.nvim_get_current_win()
+    mod("tree").open(host, root)
+    if api.nvim_win_is_valid(win) then
+      api.nvim_set_current_win(win)
+    end
+  end
 end
 
 -- ---------------------------------------------------------------------------
