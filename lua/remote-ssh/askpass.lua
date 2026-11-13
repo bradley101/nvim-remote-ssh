@@ -14,7 +14,7 @@ local function default_handler(prompt, kind)
     -- Host key confirmation: show the whole message (it contains the
     -- fingerprint) and require an explicit choice.
     local text = prompt:gsub("%s*%(yes/no[^)]*%)%??%s*$", "")
-    local choice = ui.confirm(text .. "\n\nTrust this host and continue?", { "Yes", "No" })
+    local choice = ui.confirm(text .. "\n\nTrust this host and continue?", { "Yes", "No" }, { title = "Unknown host key" })
     return choice == 1 and "yes" or "no"
   end
   if kind == "none" then
@@ -22,7 +22,10 @@ local function default_handler(prompt, kind)
     log.info(prompt)
     return ""
   end
-  return ui.secret((prompt:gsub("%s*$", " ")))
+  local title = prompt:lower():find("passphrase", 1, true) and "Key passphrase required"
+    or prompt:lower():find("password", 1, true) and "Password required"
+    or "Input required"
+  return ui.secret((prompt:gsub("%s*$", " ")), { title = title })
 end
 
 --- Called through `nvim --remote-expr`. Returns "RSSH_OK:<answer>" or
@@ -30,6 +33,11 @@ end
 function M.ask(hex, kind)
   local prompt = util.from_hex(hex or "")
   local ok, answer = pcall(M.handler or default_handler, prompt, kind ~= "" and kind or nil)
+  if ok and answer ~= nil then
+    -- ssh now carries on (checking the password, moving to the next hop),
+    -- which can take a while: say so.
+    pcall(require("remote-ssh.connection").answered, prompt)
+  end
   if not ok then
     log.debug("askpass handler failed: " .. tostring(answer))
     return "RSSH_CANCEL"

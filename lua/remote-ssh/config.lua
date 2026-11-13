@@ -10,6 +10,9 @@ M.defaults = {
     connect_timeout = 15,
     -- Seconds the shared connection stays open after the last use.
     control_persist = 600,
+    -- Reach hosts behind a jump host through one shared connection to that
+    -- jump host, so its password is asked once, not once per host behind it.
+    share_jump_hosts = true,
   },
   remote = {
     -- Install directory on the server. nil = ${XDG_DATA_HOME:-~/.local/share}/nvim-remote-ssh
@@ -76,10 +79,33 @@ M.defaults = {
     auto = true,
     delays = { 2, 5, 15 },
   },
+  open = {
+    -- Where :RemoteSSH open puts the workspace when this Neovim already has
+    -- local files or another remote host open:
+    --   "auto"  a new Neovim in a new terminal window/tab when one can be
+    --           started (tmux, kitty, wezterm, alacritty, iTerm2,
+    --           Terminal.app, or `cmd`),
+    --           otherwise this one
+    --   "ask"   ask each time
+    --   "same"  always this Neovim
+    window = "auto",
+    -- How to start a program in a new terminal window: a list the nvim
+    -- command is appended to, e.g. { "foot" } or { "gnome-terminal", "--" },
+    -- or function(argv) that starts it. nil = detect.
+    cmd = nil,
+  },
   -- Request timeout (ms) for blocking operations such as reading a file.
   timeout = 20000,
   -- UI hooks; nil = built-in prompts.
   ui = {
+    -- Floating "Connecting…" window while a connection is being set up.
+    progress = true,
+    -- Ask for passwords, confirmations and text in a centred dialog instead
+    -- of the command line.
+    dialogs = true,
+    -- How strongly (0-100) the rest of the screen is darkened while one of
+    -- our dialogs is showing; 0 or false = not at all. Needs 'termguicolors'.
+    dim = 40,
     notify = nil, -- function(msg, level, opts)
     confirm = nil, -- function(msg, choices) -> index (0 = cancelled)
     input = nil, -- function(prompt, default) -> string|nil

@@ -225,12 +225,17 @@ end
 
 --- Open a folder on a host as the workspace: connect, remember it, show the
 --- explorer. host/path are prompted for when omitted.
-function M.open(host, path)
+--- opts.window: "same" | "auto" | "ask" overrides config.open.window.
+function M.open(host, path, opts)
   M.setup()
   if not host or host == "" then
     return M.pick_host(function(h)
-      M.open(h, path)
+      M.open(h, path, opts)
     end)
+  end
+  -- Local files open here: give the remote workspace a Neovim of its own.
+  if mod("launch").place(host, path ~= "" and path or nil, opts) ~= "same" then
+    return
   end
   M.connect(host, function(err, conn)
     if err then

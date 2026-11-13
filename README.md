@@ -108,6 +108,50 @@ The pickers are also available as `:Telescope remote_ssh
 returns a string for your statusline. `:checkhealth remote-ssh` checks both
 ends.
 
+### Connecting
+
+While a connection is being set up a small window shows the current step
+("Connecting via jump1 → jump2", "Authenticating as me@host", "Inspecting
+server", ...) and how long it has taken, so a slow chain of jump hosts does
+not look like a hang. Turn it off with `ui = { progress = false }`.
+
+Passwords, key passphrases, host key confirmations and other questions are
+asked in a dialog in the middle of the screen, and the rest of the screen is
+darkened while one of these windows is showing (a terminal cannot blur, so it
+is dimmed; this needs `termguicolors`). `ui = { dialogs = false }` goes back
+to the command line, and `ui = { dim = 0 }` turns the darkening off (default
+40, up to 100). The dialogs use the highlight groups `RemoteSSHDialogField`,
+`RemoteSSHDialogChoice`, `RemoteSSHDialogHint` and `RemoteSSHBackdrop`.
+
+Connections to jump hosts are shared, also between Neovim windows: once a
+jump host is connected (as a workspace of its own, or on the way to another
+server), further servers behind it do not ask for its password again, however
+many hops there are. A shared connection is closed by its last user, so
+closing the jump host's window does not cut off a server behind it. `ssh = {
+share_jump_hosts = false }` leaves jump hosts entirely to ssh.
+
+If this Neovim already has local files open, or is already used for another
+remote host, `:RemoteSSH open` starts the
+workspace in a Neovim of its own, in a new terminal window, instead of mixing
+remote buffers into what is there. That works out of the box inside tmux,
+WezTerm, kitty, Alacritty, iTerm2 and Terminal.app; elsewhere set how to open a terminal window:
+
+```lua
+opts = {
+  open = {
+    window = "auto",                 -- or "ask", or "same" to never do this
+    cmd = { "gnome-terminal", "--" } -- the nvim command is appended
+  },
+}
+```
+
+When no way to open a window is known, the workspace opens in the current
+Neovim as before.
+
+The new Neovim is started as `nvim rssh-open://host/folder`, which you can
+also run yourself. Because that is a file argument, session plugins that
+restore the last session on a plain `nvim` leave the new window alone.
+
 ### Sessions
 
 Remote files saved in a session (`:mksession`, or any session plugin) are

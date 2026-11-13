@@ -70,6 +70,12 @@ Host pw
   User rsshpw
   PreferredAuthentications password
   PubkeyAuthentication no
+Host behindpw
+  HostName 127.0.0.1
+  Port $PORT
+  User root
+  IdentityFile $W/id
+  ProxyJump pw
 Host fresh1 fresh2 fresh3 fresh4 fresh5 fresh6
   HostName 127.0.0.1
   Port $PORT

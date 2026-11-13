@@ -41,26 +41,151 @@ function M.valid_host(host)
   return type(host) == "string" and host ~= "" and not host:match("^%-") and not host:match("[%s/]")
 end
 
---- Common arguments for every invocation.
-function M.base_args(host)
+--- host -> ProxyCommand that reaches it through the shared connections of
+--- its jump hosts (see M.route), and the jump hosts it goes through.
+local routes = {}
+local hops_of = {}
+
+--- File name of the control socket for a host alias. It does not depend on
+--- how the host is reached, so every ssh we start for an alias, from any
+--- Neovim, finds the same connection.
+local function socket_name(host)
+  return vim.fn.sha256(host .. "\n" .. (config.get().ssh.config_file or "")):sub(1, 20)
+end
+
+-- Shared connections are used by several Neovim instances, and by hosts
+-- behind a jump host. Each use is recorded as an empty file next to the
+-- socket, "<socket>.u.<pid>.<user>", so a connection is only shut down by
+-- its last user.
+local function use_file(target, by)
+  return ("%s/%s.u.%d.%s"):format(M.control_dir(), socket_name(target), uv.os_getpid(), socket_name(by):sub(1, 8))
+end
+
+local function targets(host)
+  local list = { host }
+  vim.list_extend(list, hops_of[host] or {})
+  return list
+end
+
+--- Record that `host` (and the jump hosts on the way to it) is in use here.
+function M.acquire(host)
+  for _, target in ipairs(targets(host)) do
+    local fd = uv.fs_open(use_file(target, host), "w", tonumber("600", 8))
+    if fd then
+      uv.fs_close(fd)
+    end
+  end
+end
+
+--- Stop using `host`. Returns the aliases (host and/or its jump hosts) whose
+--- shared connection nobody uses any more.
+function M.release(host)
+  local idle = {}
+  for _, target in ipairs(targets(host)) do
+    uv.fs_unlink(use_file(target, host))
+    local used = false
+    for _, f in ipairs(vim.fn.glob(M.control_dir() .. "/" .. socket_name(target) .. ".u.*", true, true)) do
+      local pid = tonumber(f:match("%.u%.(%d+)%.[^/]*$"))
+      if pid and (pid == uv.os_getpid() or uv.kill(pid, 0) == 0) then
+        used = true
+      else
+        uv.fs_unlink(f) -- left behind by a Neovim that is gone
+      end
+    end
+    if not used then
+      idle[#idle + 1] = target
+    end
+  end
+  return idle
+end
+
+--- Common arguments for every invocation. opts.plain leaves out the jump
+--- host routing, giving what the user's ssh config alone says.
+function M.base_args(host, opts)
   local c = config.get().ssh
-  -- The alias is part of the socket name so two aliases of one server do not
-  -- share (and close) each other's connection.
-  local tag = host and (vim.fn.sha256(host):sub(1, 10) .. "-") or ""
+  local tag = host and socket_name(host) or "%C"
   local a = {}
   if c.config_file then
     vim.list_extend(a, { "-F", vim.fn.expand(c.config_file) })
   end
   vim.list_extend(a, {
     "-o", "ControlMaster=auto",
-    "-o", "ControlPath=" .. M.control_dir() .. "/" .. tag .. "%C",
+    "-o", "ControlPath=" .. M.control_dir() .. "/" .. tag,
     "-o", "ControlPersist=" .. tostring(c.control_persist),
     "-o", "ConnectTimeout=" .. tostring(c.connect_timeout),
     "-o", "ServerAliveInterval=15",
     "-o", "ServerAliveCountMax=3",
   })
   vim.list_extend(a, c.args or {})
+  if host and routes[host] and not (opts and opts.plain) then
+    vim.list_extend(a, { "-o", "ProxyCommand=" .. routes[host] })
+  end
   return a
+end
+
+local function plain_hop(hop)
+  -- Only "[user@]host" hops; ports and ssh:// URIs are left to ssh.
+  return M.valid_host(hop) and not hop:find(":", 1, true)
+end
+
+--- Command that forwards stdio to %h:%p through hops[n], reaching hops[n]
+--- itself through the hops before it. Every hop uses its own shared
+--- connection, so one that is already open is not authenticated again.
+local function proxy_command(hops, n)
+  local parts = { util.shq(M.cmd()) }
+  local args = M.base_args(hops[n], { plain = true })
+  -- hops[1] has no jump hosts of its own (M.route expanded them).
+  if n > 1 then
+    vim.list_extend(args, { "-o", "ProxyCommand=" .. proxy_command(hops, n - 1) })
+  end
+  for _, arg in ipairs(args) do
+    -- This string is expanded once more (%h, %p) by the ssh that runs it.
+    parts[#parts + 1] = util.shq((arg:gsub("%%", "%%%%")))
+  end
+  vim.list_extend(parts, { "-W", "'[%h]:%p'", "--", util.shq(hops[n]) })
+  return table.concat(parts, " ")
+end
+
+--- Given a host's effective config: when it is reached through jump hosts,
+--- go through them with our own shared connections. A jump host that is
+--- already connected (it is open as a workspace, or another host behind it
+--- is) is not authenticated again; one connected now is kept for the next
+--- host behind it. cb() when done.
+function M.route(host, effective, cb)
+  routes[host], hops_of[host] = nil, nil
+  local jump = effective and effective.proxyjump
+  if not config.get().ssh.share_jump_hosts or not jump or jump == "" or jump == "none" then
+    return cb()
+  end
+  local hops = {}
+  for _, hop in ipairs(vim.split(jump, ",", { plain = true, trimempty = true })) do
+    hops[#hops + 1] = vim.trim(hop)
+  end
+  -- The first hop may itself be behind jump hosts in the user's config.
+  local function expand(depth)
+    for _, hop in ipairs(hops) do
+      if not plain_hop(hop) then
+        return cb()
+      end
+    end
+    if depth > 8 then
+      return cb()
+    end
+    M.effective_config(hops[1], function(eff)
+      local j = eff.proxyjump
+      if j and j ~= "" and j ~= "none" then
+        local before = vim.split(j, ",", { plain = true, trimempty = true })
+        for i = #before, 1, -1 do
+          table.insert(hops, 1, vim.trim(before[i]))
+        end
+        return expand(depth + 1)
+      end
+      routes[host] = proxy_command(hops, #hops)
+      hops_of[host] = hops
+      cb()
+    end)
+  end
+  expand(1)
 end
 
 --- Environment that routes every ssh prompt (password, passphrase, OTP,
@@ -144,7 +269,7 @@ end
 
 --- Effective configuration for a host (`ssh -G`), as a map of lowercase keys.
 function M.effective_config(host, cb)
-  local args = M.base_args(host)
+  local args = M.base_args(host, { plain = true })
   vim.list_extend(args, { "-G", "--", host })
   proc.run(M.cmd(), args, { timeout = 10000 }, function(res)
     local map = {}
