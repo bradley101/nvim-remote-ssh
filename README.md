@@ -116,10 +116,11 @@ server", ...) and how long it has taken, so a slow chain of jump hosts does
 not look like a hang. It steps aside for password and other prompts. Turn it
 off with `ui = { progress = false }`.
 
-If this Neovim already has local files open, `:RemoteSSH open` starts the
+If this Neovim already has local files open, or is already used for another
+remote host, `:RemoteSSH open` starts the
 workspace in a Neovim of its own, in a new terminal window, instead of mixing
-remote buffers into your local ones. That works out of the box inside tmux,
-WezTerm, kitty and Alacritty; elsewhere set how to open a terminal window:
+remote buffers into what is there. That works out of the box inside tmux,
+WezTerm, kitty, Alacritty, iTerm2 and Terminal.app; elsewhere set how to open a terminal window:
 
 ```lua
 opts = {

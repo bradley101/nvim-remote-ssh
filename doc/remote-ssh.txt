@@ -44,9 +44,9 @@ While a connection is being set up, a small window shows the current step and
 the time it has taken. It is hidden while a password or other prompt is on
 screen. Disable it with `ui = { progress = false }`.
 
-When local files are already open, `:RemoteSSH open` starts the workspace in
+When local files or another remote host are already open, `:RemoteSSH open` starts the workspace in
 a separate Neovim in a new terminal window (detected: tmux, WezTerm, kitty,
-Alacritty). Options: >lua
+Alacritty, iTerm2, Terminal.app). Options: >lua
     open = {
       window = "auto", -- "ask": ask each time, "same": always this Neovim
       cmd = nil,       -- e.g. { "gnome-terminal", "--" }, or function(argv)

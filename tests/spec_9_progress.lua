@@ -64,6 +64,10 @@ test("open starts a separate Neovim when local files are open", function()
   eq(launch.has_local_buffers(), false)
   local started = {}
   config.open.cmd = function(argv) started[#started + 1] = argv end
+  -- Other hosts used by earlier tests would count as "already in use".
+  local saved_ws, saved_other = rs.workspaces, launch.has_other_remote
+  rs.workspaces = {}
+  launch.has_other_remote = function() return false end
 
   -- Nothing local is open: stays here.
   eq(launch.place("unused-a", "/tmp", nil), "same")
@@ -82,6 +86,14 @@ test("open starts a separate Neovim when local files are open", function()
   eq(launch.place("unused-a", "/tmp", { window = "same" }), "same")
   eq(#started, 1)
 
-  config.open.cmd = nil
+  -- Another remote host is in use here: its own Neovim too.
   vim.cmd("silent! %bwipeout!")
+  launch.has_other_remote = saved_other
+  rs.workspaces = { direct = "/tmp" }
+  eq(launch.has_other_remote("unused-a"), true)
+  eq(launch.place("unused-a", nil, nil), "new")
+  eq(started[2][3], [[lua require('remote-ssh').open("unused-a", nil, { window = 'same' })]])
+
+  rs.workspaces = saved_ws
+  config.open.cmd = nil
 end)

@@ -21,6 +21,38 @@ function M.has_local_buffers()
   return false
 end
 
+--- true when this Neovim is already used for another remote host.
+function M.has_other_remote(host)
+  for h in pairs(require("remote-ssh").workspaces) do
+    if h ~= host then
+      return true
+    end
+  end
+  for h, conn in pairs(require("remote-ssh.connection").conns) do
+    if h ~= host and conn.state ~= "disconnected" then
+      return true
+    end
+  end
+  return false
+end
+
+--- Run argv in a new window of a macOS terminal app through AppleScript.
+local function applescript(script)
+  return function(argv)
+    local parts = {}
+    for i, a in ipairs(argv) do
+      parts[i] = require("remote-ssh.util").shq(a)
+    end
+    local cmd = ("exec " .. table.concat(parts, " ")):gsub("\\", "\\\\"):gsub('"', '\\"')
+    local job = vim.fn.jobstart({ "osascript", "-e", (script:gsub("{cmd}", function()
+      return cmd
+    end)) }, { detach = true })
+    if job <= 0 then
+      error("could not run osascript")
+    end
+  end
+end
+
 --- The command prefix that runs a program in a new terminal window, and a
 --- name for it; nil when none is known.
 function M.detect()
@@ -46,6 +78,14 @@ function M.detect()
   end
   if env.ALACRITTY_WINDOW_ID and has("alacritty") then
     return { "alacritty", "-e" }, "a new Alacritty window"
+  end
+  if env.TERM_PROGRAM == "iTerm.app" and has("osascript") then
+    return applescript(
+      'tell application "iTerm2"\nset w to (create window with default profile)\ntell current session of w to write text "{cmd}"\nend tell'
+    ), "a new iTerm2 window"
+  end
+  if env.TERM_PROGRAM == "Apple_Terminal" and has("osascript") then
+    return applescript('tell application "Terminal"\nactivate\ndo script "{cmd}"\nend tell'), "a new Terminal window"
   end
   return nil
 end
@@ -84,16 +124,27 @@ function M.place(host, path, opts)
   if mode == "same" or mode == "never" or mode == false then
     return "same"
   end
-  if require("remote-ssh.connection").get(host) or not M.has_local_buffers() then
+  local conn = require("remote-ssh.connection").get(host)
+  if conn and conn.state ~= "disconnected" then
+    return "same"
+  end
+  local other = M.has_other_remote(host)
+  if not other and not M.has_local_buffers() then
     return "same"
   end
   local cmd, what = M.detect()
   if not cmd then
+    if not M.warned and #api.nvim_list_uis() > 0 then
+      M.warned = true
+      require("remote-ssh.log").info(
+        ("Opening '%s' in this Neovim: no way to open a new terminal window is known for this terminal. Set open.cmd to get a separate window."):format(host)
+      )
+    end
     return "same"
   end
   if mode == "ask" then
     local choice = require("remote-ssh.ui").confirm(
-      ("Local files are open here. Open '%s' in:"):format(host),
+      ("%s here. Open '%s' in:"):format(other and "Another remote host is open" or "Local files are open", host),
       { "New window", "This window", "Cancel" }
     )
     if choice == 2 then

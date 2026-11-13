@@ -78,9 +78,10 @@ M.defaults = {
   },
   open = {
     -- Where :RemoteSSH open puts the workspace when this Neovim already has
-    -- local files open:
+    -- local files or another remote host open:
     --   "auto"  a new Neovim in a new terminal window/tab when one can be
-    --           started (tmux, kitty, wezterm, alacritty, or `cmd`),
+    --           started (tmux, kitty, wezterm, alacritty, iTerm2,
+    --           Terminal.app, or `cmd`),
     --           otherwise this one
     --   "ask"   ask each time
     --   "same"  always this Neovim
