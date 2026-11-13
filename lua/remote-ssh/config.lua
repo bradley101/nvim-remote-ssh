@@ -62,6 +62,12 @@ M.defaults = {
     max_files = 200000,
     max_grep_results = 2000,
   },
+  telescope = {
+    -- While a remote workspace is in use, telescope's own find_files,
+    -- live_grep and grep_string (and mappings that call them) search the
+    -- remote workspace instead of the local working directory.
+    override_builtins = true,
+  },
   tree = {
     width = 34,
     show_hidden = true,
