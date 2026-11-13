@@ -116,6 +116,11 @@ server", ...) and how long it has taken, so a slow chain of jump hosts does
 not look like a hang. It steps aside for password and other prompts. Turn it
 off with `ui = { progress = false }`.
 
+Connections to jump hosts are shared: once a jump host is connected (as a
+workspace of its own, or on the way to another server), further servers
+behind it do not ask for its password again. `ssh = { share_jump_hosts =
+false }` leaves jump hosts entirely to ssh.
+
 If this Neovim already has local files open, or is already used for another
 remote host, `:RemoteSSH open` starts the
 workspace in a Neovim of its own, in a new terminal window, instead of mixing

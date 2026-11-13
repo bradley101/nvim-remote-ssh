@@ -84,6 +84,7 @@ local function open_master(conn)
   local eff = await(function(cb)
     ssh.effective_config(host, cb)
   end)
+  ssh.route(host, eff)
   local jump = eff.proxyjump
   local via = jump and jump ~= "" and jump ~= "none" and (" via " .. jump:gsub(",%s*", " → ")) or ""
   while true do

@@ -41,8 +41,13 @@ function M.valid_host(host)
   return type(host) == "string" and host ~= "" and not host:match("^%-") and not host:match("[%s/]")
 end
 
---- Common arguments for every invocation.
-function M.base_args(host)
+--- host -> ProxyCommand that reaches it through the shared connection of
+--- its jump host (see M.route).
+local routes = {}
+
+--- Common arguments for every invocation. opts.plain leaves out the jump
+--- host routing, giving what the user's ssh config alone says.
+function M.base_args(host, opts)
   local c = config.get().ssh
   -- The alias is part of the socket name so two aliases of one server do not
   -- share (and close) each other's connection.
@@ -60,7 +65,40 @@ function M.base_args(host)
     "-o", "ServerAliveCountMax=3",
   })
   vim.list_extend(a, c.args or {})
+  if host and routes[host] and not (opts and opts.plain) then
+    vim.list_extend(a, { "-o", "ProxyCommand=" .. routes[host] })
+  end
   return a
+end
+
+--- Given a host's effective config: when it is reached through jump hosts,
+--- go through the last one with our own shared connection to it. If that
+--- jump host is already connected (it is open as a workspace, or another
+--- host behind it is), nothing has to be authenticated again; otherwise the
+--- connection made now is kept for the next host behind it.
+function M.route(host, effective)
+  routes[host] = nil
+  local jump = effective and effective.proxyjump
+  if not config.get().ssh.share_jump_hosts or not jump or jump == "" or jump == "none" then
+    return
+  end
+  local hops = vim.split(jump, ",", { plain = true, trimempty = true })
+  local last = vim.trim(hops[#hops] or "")
+  -- Only plain "[user@]host" hops; ports and ssh:// URIs are left to ssh.
+  if not M.valid_host(last) or last:find(":", 1, true) then
+    return
+  end
+  local parts = { util.shq(M.cmd()) }
+  for _, arg in ipairs(M.base_args(last, { plain = true })) do
+    parts[#parts + 1] = util.shq((arg:gsub("%%", "%%%%")))
+  end
+  if #hops > 1 then
+    hops[#hops] = nil
+    parts[#parts + 1] = "-J"
+    parts[#parts + 1] = util.shq((table.concat(hops, ","):gsub("%%", "%%%%")))
+  end
+  vim.list_extend(parts, { "-W", "'[%h]:%p'", "--", util.shq(last) })
+  routes[host] = table.concat(parts, " ")
 end
 
 --- Environment that routes every ssh prompt (password, passphrase, OTP,
@@ -144,7 +182,7 @@ end
 
 --- Effective configuration for a host (`ssh -G`), as a map of lowercase keys.
 function M.effective_config(host, cb)
-  local args = M.base_args(host)
+  local args = M.base_args(host, { plain = true })
   vim.list_extend(args, { "-G", "--", host })
   proc.run(M.cmd(), args, { timeout = 10000 }, function(res)
     local map = {}

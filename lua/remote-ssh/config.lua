@@ -10,6 +10,9 @@ M.defaults = {
     connect_timeout = 15,
     -- Seconds the shared connection stays open after the last use.
     control_persist = 600,
+    -- Reach hosts behind a jump host through one shared connection to that
+    -- jump host, so its password is asked once, not once per host behind it.
+    share_jump_hosts = true,
   },
   remote = {
     -- Install directory on the server. nil = ${XDG_DATA_HOME:-~/.local/share}/nvim-remote-ssh
