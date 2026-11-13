@@ -38,6 +38,23 @@ checks whether the file changed on the server since it was read and asks what
 to do if so; |:write!| overwrites.
 
 ==============================================================================
+CONNECTING                                               *remote-ssh-connecting*
+
+While a connection is being set up, a small window shows the current step and
+the time it has taken. It is hidden while a password or other prompt is on
+screen. Disable it with `ui = { progress = false }`.
+
+When local files are already open, `:RemoteSSH open` starts the workspace in
+a separate Neovim in a new terminal window (detected: tmux, WezTerm, kitty,
+Alacritty). Options: >lua
+    open = {
+      window = "auto", -- "ask": ask each time, "same": always this Neovim
+      cmd = nil,       -- e.g. { "gnome-terminal", "--" }, or function(argv)
+    }
+<
+Without a known way to open a window the workspace opens in this Neovim.
+
+==============================================================================
 EXPLORER KEYS                                                *remote-ssh-tree*
 
 <CR> o l  open / expand        s v t   open in split / vsplit / tab

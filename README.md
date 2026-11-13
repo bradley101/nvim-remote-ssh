@@ -108,6 +108,31 @@ The pickers are also available as `:Telescope remote_ssh
 returns a string for your statusline. `:checkhealth remote-ssh` checks both
 ends.
 
+### Connecting
+
+While a connection is being set up a small window shows the current step
+("Connecting via jump1 → jump2", "Authenticating as me@host", "Inspecting
+server", ...) and how long it has taken, so a slow chain of jump hosts does
+not look like a hang. It steps aside for password and other prompts. Turn it
+off with `ui = { progress = false }`.
+
+If this Neovim already has local files open, `:RemoteSSH open` starts the
+workspace in a Neovim of its own, in a new terminal window, instead of mixing
+remote buffers into your local ones. That works out of the box inside tmux,
+WezTerm, kitty and Alacritty; elsewhere set how to open a terminal window:
+
+```lua
+opts = {
+  open = {
+    window = "auto",                 -- or "ask", or "same" to never do this
+    cmd = { "gnome-terminal", "--" } -- the nvim command is appended
+  },
+}
+```
+
+When no way to open a window is known, the workspace opens in the current
+Neovim as before.
+
 ### Sessions
 
 Remote files saved in a session (`:mksession`, or any session plugin) are

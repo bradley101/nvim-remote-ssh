@@ -76,10 +76,26 @@ M.defaults = {
     auto = true,
     delays = { 2, 5, 15 },
   },
+  open = {
+    -- Where :RemoteSSH open puts the workspace when this Neovim already has
+    -- local files open:
+    --   "auto"  a new Neovim in a new terminal window/tab when one can be
+    --           started (tmux, kitty, wezterm, alacritty, or `cmd`),
+    --           otherwise this one
+    --   "ask"   ask each time
+    --   "same"  always this Neovim
+    window = "auto",
+    -- How to start a program in a new terminal window: a list the nvim
+    -- command is appended to, e.g. { "foot" } or { "gnome-terminal", "--" },
+    -- or function(argv) that starts it. nil = detect.
+    cmd = nil,
+  },
   -- Request timeout (ms) for blocking operations such as reading a file.
   timeout = 20000,
   -- UI hooks; nil = built-in prompts.
   ui = {
+    -- Floating "Connecting…" window while a connection is being set up.
+    progress = true,
     notify = nil, -- function(msg, level, opts)
     confirm = nil, -- function(msg, choices) -> index (0 = cancelled)
     input = nil, -- function(prompt, default) -> string|nil

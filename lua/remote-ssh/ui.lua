@@ -5,9 +5,21 @@ local function cfg()
   return require("remote-ssh.config").get().ui
 end
 
+--- Run a blocking prompt with the connection progress window out of the way.
+local function prompting(fn, ...)
+  local progress = require("remote-ssh.progress")
+  progress.suspend()
+  local res = { pcall(fn, ...) }
+  progress.resume()
+  if not res[1] then
+    error(res[2], 0)
+  end
+  return res[2]
+end
+
 --- Ask a multiple-choice question. Returns the 1-based index of the chosen
 --- entry, or 0 when cancelled.
-function M.confirm(msg, choices)
+local function confirm(msg, choices)
   if cfg().confirm then
     return cfg().confirm(msg, choices) or 0
   end
@@ -19,12 +31,16 @@ function M.confirm(msg, choices)
   return ok and res or 0
 end
 
+function M.confirm(msg, choices)
+  return prompting(confirm, msg, choices)
+end
+
 --- Yes/No helper.
 function M.yes(msg)
   return M.confirm(msg, { "Yes", "No" }) == 1
 end
 
-function M.input(prompt, default)
+local function input(prompt, default)
   if cfg().input then
     return cfg().input(prompt, default)
   end
@@ -35,7 +51,11 @@ function M.input(prompt, default)
   return res
 end
 
-function M.secret(prompt)
+function M.input(prompt, default)
+  return prompting(input, prompt, default)
+end
+
+local function secret(prompt)
   if cfg().secret then
     return cfg().secret(prompt)
   end
@@ -44,6 +64,10 @@ function M.secret(prompt)
     return nil
   end
   return res
+end
+
+function M.secret(prompt)
+  return prompting(secret, prompt)
 end
 
 return M

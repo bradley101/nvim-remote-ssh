@@ -1,0 +1,87 @@
+local H, T = ...
+local test, eq, ok, match, wait = H.test, H.eq, H.ok, H.match, H.wait
+local connection = require("remote-ssh.connection")
+local progress = require("remote-ssh.progress")
+local launch = require("remote-ssh.launch")
+local config = require("remote-ssh.config").get()
+
+local function disconnect(host)
+  local conn = connection.get(host)
+  if conn and conn.state == "connected" then
+    conn:close()
+    wait(function() return conn.state == "disconnected" end, 5000, host .. " closed")
+    vim.wait(700)
+  end
+end
+
+test("a progress window follows the connection and closes when it is up", function()
+  disconnect("doublejump")
+  local seen, shown = {}, false
+  connection.on("progress", function(host, text)
+    if host == "doublejump" and text then
+      seen[#seen + 1] = text
+      shown = shown or (progress.visible() and progress.status().doublejump == text)
+    end
+  end)
+  local conn, err = T.connect("doublejump")
+  ok(conn, "connect failed: " .. require("remote-ssh.util").errmsg(err or ""))
+  match(seen[1], "^Connecting via direct → jumped$")
+  ok(shown, "the progress window was not visible while connecting")
+  eq(progress.status(), {})
+  eq(progress.visible(), false)
+end)
+
+test("answering a password prompt switches to 'Authenticating'", function()
+  disconnect("pw")
+  local seen = {}
+  connection.on("progress", function(host, text)
+    if host == "pw" and text then seen[#seen + 1] = text end
+  end)
+  local conn, err = T.connect("pw")
+  ok(conn, "connect failed: " .. require("remote-ssh.util").errmsg(err or ""))
+  eq(seen[1], "Connecting")
+  match(seen[2], "^Authenticating as rsshpw@")
+  eq(progress.visible(), false)
+end)
+
+test("the progress window is hidden while a prompt is on screen", function()
+  progress.set("somehost", "Connecting")
+  eq(progress.visible(), true)
+  local during
+  local saved = config.ui.confirm
+  config.ui.confirm = function() during = progress.visible() return 1 end
+  require("remote-ssh.ui").confirm("?", { "Yes" })
+  config.ui.confirm = saved
+  eq(during, false)
+  eq(progress.visible(), true)
+  progress.set("somehost", nil)
+  eq(progress.visible(), false)
+end)
+
+test("open starts a separate Neovim when local files are open", function()
+  local rs = require("remote-ssh")
+  vim.cmd("silent! %bwipeout!")
+  eq(launch.has_local_buffers(), false)
+  local started = {}
+  config.open.cmd = function(argv) started[#started + 1] = argv end
+
+  -- Nothing local is open: stays here.
+  eq(launch.place("unused-a", "/tmp", nil), "same")
+  eq(#started, 0)
+
+  vim.cmd("edit " .. vim.fn.fnameescape(T.W .. "/ssh_config"))
+  eq(launch.has_local_buffers(), true)
+  rs.open("unused-a", "/srv/my app")
+  eq(#started, 1)
+  eq(started[1][1], vim.v.progpath)
+  eq(started[1][2], "-c")
+  eq(started[1][3], [[lua require('remote-ssh').open("unused-a", "/srv/my app", { window = 'same' })]])
+  eq(connection.get("unused-a"), nil)
+
+  -- Opted out: stays here.
+  eq(launch.place("unused-a", "/tmp", { window = "same" }), "same")
+  eq(#started, 1)
+
+  config.open.cmd = nil
+  vim.cmd("silent! %bwipeout!")
+end)

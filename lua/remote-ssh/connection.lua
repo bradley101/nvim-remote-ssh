@@ -48,6 +48,9 @@ end
 
 local function progress(conn, text)
   conn.status = text
+  if not conn.quiet or not text then
+    require("remote-ssh.progress").set(conn.host, text)
+  end
   if text then
     log.debug(("[%s] %s"):format(conn.host, text))
   end
@@ -55,6 +58,18 @@ local function progress(conn, text)
   vim.schedule(function()
     pcall(vim.cmd, "redrawstatus")
   end)
+end
+
+--- Called after the user answered an ssh prompt (password, passphrase,
+--- one-time code, host key): the connection attempts that are still at the
+--- login stage are now authenticating.
+function M.answered(prompt)
+  local who = prompt:match("^%s*%(?([^%s()']+@[^%s()':]+)%)?'s [Pp]assword") or prompt:match("^%s*%(([^%s()]+@[^%s()]+)%)")
+  for _, conn in pairs(M.conns) do
+    if conn.state == "connecting" and conn.stage == "login" then
+      progress(conn, who and ("Authenticating as " .. who) or "Authenticating")
+    end
+  end
 end
 
 -- ---------------------------------------------------------------------------
@@ -65,11 +80,19 @@ end
 local function open_master(conn)
   local host = conn.host
   local mux_retry = false
+  -- Name the jump hosts: they are what makes a connection slow.
+  local eff = await(function(cb)
+    ssh.effective_config(host, cb)
+  end)
+  local jump = eff.proxyjump
+  local via = jump and jump ~= "" and jump ~= "none" and (" via " .. jump:gsub(",%s*", " → ")) or ""
   while true do
-    progress(conn, "Connecting")
+    conn.stage = "login"
+    progress(conn, "Connecting" .. via)
     local res = await(function(cb)
       ssh.exec(host, "echo RSSH_CONNECTED", {}, cb)
     end)
+    conn.stage = nil
     if res.code == 0 and res.stdout:find("RSSH_CONNECTED", 1, true) then
       return
     end
@@ -91,9 +114,6 @@ local function open_master(conn)
         )
       else
         err = ssh.classify(host, res.stderr, res)
-        local eff = await(function(cb)
-          ssh.effective_config(host, cb)
-        end)
         ssh.annotate_jump(err, eff)
       end
       if not err.retryable or conn.quiet then
@@ -333,6 +353,7 @@ function M.connect(host, opts, cb)
   util.async(function()
     establish(conn)
   end, function(err)
+    conn.stage = nil
     progress(conn, nil)
     local waiters = conn.waiters
     conn.waiters = {}
