@@ -11,7 +11,7 @@ function M.load()
   if cache then
     return cache
   end
-  cache = { hosts = {}, recent = {} }
+  cache = { hosts = {}, recent = {}, cursors = {} }
   local f = io.open(file(), "r")
   if f then
     local ok, data = pcall(vim.json.decode, f:read("*a"))
@@ -19,6 +19,7 @@ function M.load()
     if ok and type(data) == "table" then
       cache.hosts = type(data.hosts) == "table" and data.hosts or {}
       cache.recent = type(data.recent) == "table" and data.recent or {}
+      cache.cursors = type(data.cursors) == "table" and data.cursors or {}
     end
   end
   return cache
@@ -55,6 +56,27 @@ function M.add_recent(host, path)
   end
   s.recent = list
   M.save()
+end
+
+--- Remember where the cursor was in a remote file (kept in memory until
+--- M.save()).
+function M.set_cursor(uri, pos)
+  local s = M.load()
+  if vim.tbl_isempty(s.cursors) then
+    s.cursors = vim.empty_dict()
+  end
+  if s.cursors[uri] == nil and vim.tbl_count(s.cursors) >= 500 then
+    s.cursors = vim.empty_dict() -- crude cap; positions are a convenience
+  end
+  s.cursors[uri] = { pos[1], pos[2] }
+end
+
+function M.get_cursor(uri)
+  local pos = M.load().cursors[uri]
+  if type(pos) == "table" and type(pos[1]) == "number" then
+    return { pos[1], pos[2] or 0 }
+  end
+  return nil
 end
 
 function M.recent()

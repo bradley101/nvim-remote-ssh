@@ -95,6 +95,67 @@ local function mark_failed(bufnr, host, path, message)
   log.error(message)
 end
 
+--- true while Neovim is starting up or a session file is being loaded.
+function M.restoring()
+  return vim.g.SessionLoad == 1 or vim.v.vim_did_enter == 0
+end
+
+--- Placeholder for a file that will be loaded once its host is connected.
+local function mark_pending(bufnr, host, path)
+  M.meta[bufnr] = { host = host, path = path, failed = true, pending = true }
+  set_lines(bufnr, {})
+  vim.bo[bufnr].buftype = "acwrite"
+  vim.bo[bufnr].swapfile = false
+  vim.bo[bufnr].modified = false
+  vim.bo[bufnr].modifiable = false
+end
+
+local function pending_count(host)
+  local n = 0
+  for bufnr, meta in pairs(M.meta) do
+    if meta.host == host and meta.pending and api.nvim_buf_is_valid(bufnr) then
+      n = n + 1
+    end
+  end
+  return n
+end
+
+local deferred = {}
+
+--- Connect to host once startup / session loading is over. Buffers marked
+--- pending are filled in by the "connected" hook.
+local function defer_connect(host)
+  if deferred[host] then
+    return
+  end
+  deferred[host] = true
+  local function go()
+    connection.connect(host, {}, function(err)
+      deferred[host] = nil
+      if err then
+        local n = pending_count(host)
+        if n > 0 then
+          log.warn(("%d file(s) on '%s' from the previous session were not loaded. :RemoteSSH reconnect %s loads them."):format(n, host, host))
+        end
+      else
+        require("remote-ssh").restored(host)
+      end
+    end)
+  end
+  vim.schedule(function()
+    if vim.v.vim_did_enter == 1 then
+      go()
+    else
+      api.nvim_create_autocmd("VimEnter", {
+        once = true,
+        callback = function()
+          vim.schedule(go)
+        end,
+      })
+    end
+  end)
+end
+
 --- Load (or reload) the remote file behind bufnr.
 function M.read(bufnr, opts)
   opts = opts or {}
@@ -107,6 +168,15 @@ function M.read(bufnr, opts)
   if canon ~= name then
     pcall(api.nvim_buf_set_name, bufnr, canon)
   end
+
+  -- Restoring a session (or `nvim rssh://...`): never block startup on a
+  -- connection. Show a placeholder and load the file once connected.
+  local existing = connection.get(host)
+  if not (existing and existing.state == "connected") and (opts.defer or M.restoring()) then
+    mark_pending(bufnr, host, path)
+    return defer_connect(host)
+  end
+  local was_pending = M.meta[bufnr] and M.meta[bufnr].pending
 
   local conn, cerr = get_conn(host)
   if not conn then
@@ -183,6 +253,48 @@ function M.read(bufnr, opts)
       pcall(api.nvim_exec_autocmds, "BufReadPost", { buffer = bufnr })
     end)
     M.detect_filetype(bufnr, path)
+  end
+  if was_pending then
+    -- The session placed the cursor while the buffer was still empty: put it
+    -- back where it was when the file was last closed.
+    local pos = require("remote-ssh.state").get_cursor(canon)
+    if pos and pos[1] <= api.nvim_buf_line_count(bufnr) then
+      for _, win in ipairs(vim.fn.win_findbuf(bufnr)) do
+        pcall(api.nvim_win_set_cursor, win, pos)
+      end
+    end
+  end
+end
+
+--- Hosts whose explorer window was part of a restored session.
+M.tree_wanted = {}
+
+--- Adopt rssh:// buffers that were created without our BufReadCmd running. This
+--- is the normal case for sessions: :mksession recreates them with
+--- `enew | file <name>`, which reads nothing.
+function M.adopt_orphans()
+  for _, bufnr in ipairs(api.nvim_list_bufs()) do
+    local name = api.nvim_buf_get_name(bufnr)
+    local tree_host = name:match("^rssh%-tree://([^/]+)")
+    if (tree_host or name:match("^rssh%-term://")) and vim.bo[bufnr].buftype == "" then
+      -- A session recreated an explorer/terminal window as an empty buffer.
+      -- Remove it; the explorer is reopened properly once connected.
+      local wins = vim.fn.win_findbuf(bufnr)
+      if tree_host and #wins > 0 then
+        M.tree_wanted[tree_host] = true
+      end
+      for _, win in ipairs(wins) do
+        if #api.nvim_tabpage_list_wins(api.nvim_win_get_tabpage(win)) > 1 then
+          pcall(api.nvim_win_close, win, true)
+        end
+      end
+      pcall(api.nvim_buf_delete, bufnr, { force = true })
+    elseif api.nvim_buf_is_loaded(bufnr) and not M.meta[bufnr] and P.parse(api.nvim_buf_get_name(bufnr)) and not vim.bo[bufnr].modified then
+      local lines = api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      if #lines <= 1 and (lines[1] or "") == "" then
+        M.read(bufnr, { defer = true })
+      end
+    end
   end
 end
 
@@ -372,6 +484,36 @@ function M.setup()
           conn:notify("fs.unwatch", { path = meta.path })
         end
       end
+    end,
+  })
+
+  api.nvim_create_autocmd("BufWinLeave", {
+    group = group,
+    pattern = "rssh://*",
+    callback = function(args)
+      local meta = M.meta[args.buf]
+      if meta and not meta.failed and api.nvim_get_current_buf() == args.buf then
+        require("remote-ssh.state").set_cursor(P.uri(meta.host, meta.path), api.nvim_win_get_cursor(0))
+      end
+    end,
+  })
+  api.nvim_create_autocmd({ "VimEnter", "SessionLoadPost" }, {
+    group = group,
+    callback = function()
+      vim.schedule(M.adopt_orphans)
+    end,
+  })
+  -- Explorer and terminal windows cannot be restored from their names alone;
+  -- do not leave them behind as empty buffers.
+  api.nvim_create_autocmd("BufReadCmd", {
+    group = group,
+    pattern = { "rssh-tree://*", "rssh-term://*" },
+    callback = function(args)
+      vim.schedule(function()
+        if api.nvim_buf_is_valid(args.buf) and vim.bo[args.buf].buftype == "" then
+          pcall(api.nvim_buf_delete, args.buf, { force = true })
+        end
+      end)
     end,
   })
 

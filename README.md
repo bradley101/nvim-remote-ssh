@@ -108,6 +108,15 @@ The pickers are also available as `:Telescope remote_ssh
 returns a string for your statusline. `:checkhealth remote-ssh` checks both
 ends.
 
+### Sessions
+
+Remote files saved in a session (`:mksession`, or any session plugin) are
+restored: Neovim starts without waiting, the buffers show up empty for a
+moment, and once the host is reconnected their contents, cursor positions,
+workspace, language servers and (if it was showing) the explorer come back.
+If the connection fails, `:RemoteSSH reconnect <host>` loads them.
+`nvim rssh://host/path/file` works the same way.
+
 ### Language servers
 
 Servers you enabled with `vim.lsp.enable()` are started on the server for
