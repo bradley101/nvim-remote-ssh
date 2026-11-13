@@ -25,6 +25,11 @@ function M.setup(opts)
   mod("buffer").setup()
   mod("lsp").setup()
   mod("forward").setup()
+  -- Done on first connect rather than at startup, so telescope is not loaded
+  -- before it is needed.
+  mod("connection").on("connected", function()
+    mod("override").install()
+  end)
   api.nvim_create_autocmd("VimLeavePre", {
     group = api.nvim_create_augroup("RemoteSSHExit", { clear = true }),
     callback = function()

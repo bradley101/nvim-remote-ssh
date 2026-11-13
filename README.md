@@ -98,6 +98,11 @@ nothing connects until you run a command. To lazy-load instead, use
 | `:RemoteSSH setup <host>` | retry optional downloads that failed |
 | `:RemoteSSH uninstall <host>` | remove everything installed on the server |
 
+While a remote workspace is in use, telescope's own `find_files`, `live_grep`
+and `grep_string` search that workspace, so existing mappings such as
+`<leader>ff` keep working; from a local file's buffer they search locally as
+before. Set `telescope = { override_builtins = false }` to turn this off.
+
 The pickers are also available as `:Telescope remote_ssh
 {hosts,recent,files,live_grep,symbols}`. `require("remote-ssh").statusline()`
 returns a string for your statusline. `:checkhealth remote-ssh` checks both
