@@ -1,0 +1,12 @@
+#!/bin/sh
+# Invoked by ssh (SSH_ASKPASS) whenever it needs input: a password, a key
+# passphrase, a one-time code or a host key confirmation. Forwards the prompt
+# to the Neovim instance that started the connection and prints the answer.
+[ -n "${RSSH_NVIM:-}" ] && [ -n "${RSSH_SERVER:-}" ] || exit 1
+hex=$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n')
+answer=$("$RSSH_NVIM" --headless --server "$RSSH_SERVER" \
+  --remote-expr "luaeval(\"require('remote-ssh.askpass').ask('$hex', '${SSH_ASKPASS_PROMPT:-}')\")" 2>/dev/null) || exit 1
+case "$answer" in
+  RSSH_OK:*) printf '%s\n' "${answer#RSSH_OK:}" ;;
+  *) exit 1 ;;
+esac

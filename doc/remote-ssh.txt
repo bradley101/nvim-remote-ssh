@@ -1,0 +1,58 @@
+*remote-ssh.txt*  Work on remote machines over SSH
+
+==============================================================================
+INTRODUCTION                                                      *remote-ssh*
+
+remote-ssh keeps Neovim local and runs file access, search and language
+servers on a remote machine through a small agent, reached over the system
+OpenSSH client. See README.md for an overview.
+
+==============================================================================
+COMMANDS                                                         *:RemoteSSH*
+
+:RemoteSSH open [host] [folder]    Connect and open a folder as workspace.
+:RemoteSSH connect [host]          Connect (first-time setup if needed).
+:RemoteSSH recent                  Recently opened workspaces.
+:RemoteSSH files                   Find a file in the workspace.
+:RemoteSSH grep [pattern]          Search text; live with telescope.
+:RemoteSSH symbols                 Functions, methods, classes of the buffer.
+:RemoteSSH outline                 Toggle a symbol outline window.
+:RemoteSSH tree                    Toggle the file explorer.
+:RemoteSSH terminal                Shell on the server.
+:RemoteSSH forward [spec]          Forward LOCAL, LOCAL:REMOTE or
+                                   LOCAL:HOST:REMOTE; no argument lists them.
+:RemoteSSH unforward {spec}        Stop a forward.
+:RemoteSSH disconnect [host]       Close the connection.
+:RemoteSSH reconnect [host]        Connect again.
+:RemoteSSH info                    Connection state.
+:RemoteSSH log                     Diagnostic log.
+:RemoteSSH setup {host}            Retry optional server components.
+:RemoteSSH uninstall {host}        Remove everything installed on the server.
+
+==============================================================================
+REMOTE FILES                                                *remote-ssh-files*
+
+Remote files are buffers named rssh://{host}/{absolute path}; |:edit|,
+|:write|, |:saveas| and the quickfix list work with these names. Saving
+checks whether the file changed on the server since it was read and asks what
+to do if so; |:write!| overwrites.
+
+==============================================================================
+EXPLORER KEYS                                                *remote-ssh-tree*
+
+<CR> o l  open / expand        s v t   open in split / vsplit / tab
+h         collapse             a       add file (end name with / for folder)
+r         rename               c       copy
+d         delete               R       refresh
+-         go to parent         C       make folder the root
+H         toggle hidden files  y       yank path
+q         close                ?       help
+
+==============================================================================
+CONFIGURATION                                              *remote-ssh-config*
+
+    require("remote-ssh").setup({ ... })
+
+All options and their defaults are documented in lua/remote-ssh/config.lua.
+
+ vim:tw=78:ts=8:ft=help:norl:
