@@ -44,6 +44,41 @@ test("answering a password prompt switches to 'Authenticating'", function()
   eq(progress.visible(), false)
 end)
 
+local function password_prompts(from)
+  local n = 0
+  for i = from + 1, #T.prompts do
+    if T.prompts[i]:find("password", 1, true) then n = n + 1 end
+  end
+  return n
+end
+
+test("a connected jump host is not asked for its password again", function()
+  ok(connection.is_connected("pw"))
+  local n = #T.prompts
+  local conn, err = T.connect("behindpw")
+  ok(conn, "connect failed: " .. require("remote-ssh.util").errmsg(err or ""))
+  eq(password_prompts(n), 0)
+  eq(assert(conn:call("exec", { cmd = { "id", "-un" } })).stdout, "root\n")
+end)
+
+test("a jump host stays connected while a host behind it is in use", function()
+  -- Closing the jump host's own workspace must not cut off the host behind it.
+  disconnect("pw")
+  local conn = connection.get("behindpw")
+  eq(assert(conn:call("exec", { cmd = { "echo", "alive" } })).stdout, "alive\n")
+  eq(conn.state, "connected")
+  -- ...and it is still shared: reconnecting to it needs no password.
+  local n = #T.prompts
+  ok(T.connect("pw"))
+  eq(password_prompts(n), 0)
+  -- Once nobody uses it, it is shut down and the password is needed again.
+  disconnect("behindpw")
+  disconnect("pw")
+  n = #T.prompts
+  ok(T.connect("behindpw"))
+  eq(password_prompts(n), 1)
+end)
+
 test("the progress window is hidden while a prompt is on screen", function()
   progress.set("somehost", "Connecting")
   eq(progress.visible(), true)

@@ -84,7 +84,9 @@ local function open_master(conn)
   local eff = await(function(cb)
     ssh.effective_config(host, cb)
   end)
-  ssh.route(host, eff)
+  await(function(cb)
+    ssh.route(host, eff, cb)
+  end)
   local jump = eff.proxyjump
   local via = jump and jump ~= "" and jump ~= "none" and (" via " .. jump:gsub(",%s*", " → ")) or ""
   while true do
@@ -297,6 +299,7 @@ local function establish(conn)
     error(ssh.classify(conn.host, "command not found", { spawn_failed = true }))
   end
   open_master(conn)
+  ssh.acquire(conn.host)
   local info, plan = prepare_server(conn)
   progress(conn, "Starting remote agent")
   local agent_path = upload_agent(conn, info.base)
@@ -594,11 +597,24 @@ function Conn:close(cb)
       p.kill()
     end, 500)
   end
-  ssh.control(self.host, "exit", nil, function()
+  -- Shut down the shared connections this was the last user of. Others
+  -- (another Neovim, or a host that jumps through this one) keep theirs.
+  local idle = ssh.release(self.host)
+  local pending = #idle
+  if pending == 0 then
     if cb then
-      cb()
+      vim.schedule(cb)
     end
-  end)
+    return
+  end
+  for _, target in ipairs(idle) do
+    ssh.control(target, "exit", nil, function()
+      pending = pending - 1
+      if pending == 0 and cb then
+        cb()
+      end
+    end)
+  end
 end
 
 --- Close everything; used on VimLeavePre.

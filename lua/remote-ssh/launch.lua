@@ -102,6 +102,10 @@ function M.spawn(host, path)
     "-c",
     ("lua require('remote-ssh').open(%q, %s, { window = 'same' })"):format(host, path and ("%q"):format(path) or "nil"),
   }
+  if vim.env.NVIM_APPNAME and vim.env.NVIM_APPNAME ~= "" then
+    -- A terminal multiplexer starts programs with its own environment.
+    argv = { "env", "NVIM_APPNAME=" .. vim.env.NVIM_APPNAME, unpack(argv) }
+  end
   if type(cmd) == "function" then
     local ok, err = pcall(cmd, argv)
     if not ok or err == false then
