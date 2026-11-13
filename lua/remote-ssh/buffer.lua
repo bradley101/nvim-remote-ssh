@@ -517,6 +517,26 @@ function M.setup()
     end,
   })
 
+  -- `nvim rssh-open://host/folder` opens a workspace. Used to start a
+  -- workspace in a Neovim of its own: being a file argument, it also keeps
+  -- session plugins from restoring an unrelated session into that window.
+  api.nvim_create_autocmd("BufReadCmd", {
+    group = group,
+    pattern = "rssh-open://*",
+    callback = function(args)
+      local host, path = args.match:match("^rssh%-open://([^/]+)(.*)$")
+      vim.schedule(function()
+        if api.nvim_buf_is_valid(args.buf) then
+          pcall(api.nvim_buf_delete, args.buf, { force = true })
+        end
+        if host then
+          path = path:gsub("^/~", "~")
+          require("remote-ssh").open(host, path ~= "" and path or nil, { window = "same" })
+        end
+      end)
+    end,
+  })
+
   connection.on("connected", function(conn)
     if not conn.buffer_events then
       conn.buffer_events = true

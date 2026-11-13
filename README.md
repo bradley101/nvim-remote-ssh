@@ -141,6 +141,10 @@ opts = {
 When no way to open a window is known, the workspace opens in the current
 Neovim as before.
 
+The new Neovim is started as `nvim rssh-open://host/folder`, which you can
+also run yourself. Because that is a file argument, session plugins that
+restore the last session on a plain `nvim` leave the new window alone.
+
 ### Sessions
 
 Remote files saved in a session (`:mksession`, or any session plugin) are

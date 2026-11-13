@@ -97,11 +97,11 @@ function M.spawn(host, path)
   if not cmd then
     return false, "no way to open a new terminal window is known (set open.cmd)"
   end
-  local argv = {
-    vim.v.progpath,
-    "-c",
-    ("lua require('remote-ssh').open(%q, %s, { window = 'same' })"):format(host, path and ("%q"):format(path) or "nil"),
-  }
+  local uri = "rssh-open://" .. host
+  if path then
+    uri = uri .. (path:sub(1, 1) == "/" and "" or "/") .. path
+  end
+  local argv = { vim.v.progpath, uri }
   if vim.env.NVIM_APPNAME and vim.env.NVIM_APPNAME ~= "" then
     -- A terminal multiplexer starts programs with its own environment.
     argv = { "env", "NVIM_APPNAME=" .. vim.env.NVIM_APPNAME, unpack(argv) }

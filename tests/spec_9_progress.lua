@@ -79,6 +79,15 @@ test("a jump host stays connected while a host behind it is in use", function()
   eq(password_prompts(n), 1)
 end)
 
+test("nvim rssh-open://host/folder opens that workspace", function()
+  local rs = require("remote-ssh")
+  rs.workspaces.direct = nil
+  vim.cmd("edit rssh-open://direct" .. vim.fn.fnameescape(T.W .. "/ws"))
+  local buf = vim.api.nvim_get_current_buf()
+  wait(function() return rs.workspaces.direct == T.W .. "/ws" end, 20000, "workspace opened")
+  eq(vim.api.nvim_buf_is_valid(buf), false)
+end)
+
 test("the progress window is hidden while a prompt is on screen", function()
   progress.set("somehost", "Connecting")
   eq(progress.visible(), true)
@@ -113,8 +122,7 @@ test("open starts a separate Neovim when local files are open", function()
   rs.open("unused-a", "/srv/my app")
   eq(#started, 1)
   eq(started[1][1], vim.v.progpath)
-  eq(started[1][2], "-c")
-  eq(started[1][3], [[lua require('remote-ssh').open("unused-a", "/srv/my app", { window = 'same' })]])
+  eq(started[1][2], "rssh-open://unused-a/srv/my app")
   eq(connection.get("unused-a"), nil)
 
   -- Opted out: stays here.
@@ -127,7 +135,7 @@ test("open starts a separate Neovim when local files are open", function()
   rs.workspaces = { direct = "/tmp" }
   eq(launch.has_other_remote("unused-a"), true)
   eq(launch.place("unused-a", nil, nil), "new")
-  eq(started[2][3], [[lua require('remote-ssh').open("unused-a", nil, { window = 'same' })]])
+  eq(started[2][2], "rssh-open://unused-a")
 
   rs.workspaces = saved_ws
   config.open.cmd = nil
