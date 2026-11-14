@@ -19,6 +19,7 @@ local subcommands = {
   disconnect = function(a) require("remote-ssh").disconnect(a[1]) end,
   reconnect = function(a) require("remote-ssh").reconnect(a[1]) end,
   files = function() require("remote-ssh").files() end,
+  reindex = function(a) require("remote-ssh").reindex(a[1]) end,
   grep = function(a) require("remote-ssh").grep(table.concat(a, " ")) end,
   symbols = function() require("remote-ssh").symbols() end,
   outline = function() require("remote-ssh").outline() end,
@@ -31,7 +32,7 @@ local subcommands = {
   setup = function(a) require("remote-ssh").setup_host(a[1]) end,
   uninstall = function(a) require("remote-ssh").uninstall(a[1]) end,
 }
-local takes_host = { connect = true, open = true, disconnect = true, reconnect = true, setup = true, uninstall = true }
+local takes_host = { connect = true, open = true, disconnect = true, reconnect = true, reindex = true, setup = true, uninstall = true }
 
 vim.api.nvim_create_user_command("RemoteSSH", function(cmd)
   local args = cmd.fargs

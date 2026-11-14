@@ -380,6 +380,7 @@ function M.write(bufnr, target)
     end
     return log.error(("Could not save %s: %s"):format(target, why))
   end
+  require("remote-ssh.filecache").added(host, path)
 
   if api.nvim_buf_get_name(bufnr) == P.uri(host, path) then
     M.meta[bufnr] = {

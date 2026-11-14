@@ -64,6 +64,10 @@ M.defaults = {
   search = {
     max_files = 200000,
     max_grep_results = 2000,
+    -- List the workspace's files once, when it is opened, and keep the list
+    -- up to date by watching its folders on the server; finding files then
+    -- needs no round trip. false lists the files every time.
+    file_cache = true,
   },
   telescope = {
     -- While a remote workspace is in use, telescope's own find_files,

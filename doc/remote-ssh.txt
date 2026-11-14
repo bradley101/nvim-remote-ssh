@@ -14,6 +14,7 @@ COMMANDS                                                         *:RemoteSSH*
 :RemoteSSH connect [host]          Connect (first-time setup if needed).
 :RemoteSSH recent                  Recently opened workspaces.
 :RemoteSSH files                   Find a file in the workspace.
+:RemoteSSH reindex [host]          List the workspace's files again.
 :RemoteSSH grep [pattern]          Search text; live with telescope.
 :RemoteSSH symbols                 Functions, methods, classes of the buffer.
 :RemoteSSH outline                 Toggle a symbol outline window.
@@ -36,6 +37,18 @@ Remote files are buffers named rssh://{host}/{absolute path}; |:edit|,
 |:write|, |:saveas| and the quickfix list work with these names. Saving
 checks whether the file changed on the server since it was read and asks what
 to do if so; |:write!| overwrites.
+
+Finding files (`:RemoteSSH files`, telescope's find_files) uses a list of the
+workspace's files made once, in the background, when the workspace opens.
+The server watches the folders in that list, so files created, deleted or
+moved there, from Neovim or anything else on the server, are added and
+removed as it happens. `.git`, and with ripgrep what `.gitignore` excludes,
+are left out and not watched. When the server cannot watch (more than
+`search.max_files` files, or the inotify watch limit is reached) the list is
+refreshed in the background, at most every 30 seconds.
+`:RemoteSSH reindex` makes a new list (for example after editing
+.gitignore). `search = { file_cache = false }` lists the files on every
+search instead.
 
 ==============================================================================
 CONNECTING                                               *remote-ssh-connecting*

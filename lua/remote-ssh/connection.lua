@@ -422,6 +422,7 @@ function Conn:_wire_events()
   end
   forward("fs.changed")
   forward("mason.progress")
+  forward("index.changed")
   s:on("proc.stdout", function(p)
     local h = self.procs[p.id]
     if h and h.on_stdout then
@@ -443,7 +444,7 @@ function Conn:_wire_events()
   end)
 end
 
---- Listen for agent events ("fs.changed", "mason.progress"); survives
+--- Listen for agent events ("fs.changed", "mason.progress", "index.changed"); survives
 --- reconnects.
 function Conn:on(event, fn)
   self.listeners[event] = self.listeners[event] or {}

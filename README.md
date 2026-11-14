@@ -88,6 +88,7 @@ nothing connects until you run a command. To lazy-load instead, use
 | `:RemoteSSH connect [host]` | connect only |
 | `:RemoteSSH recent` | recently opened workspaces |
 | `:RemoteSSH files` | find a file |
+| `:RemoteSSH reindex [host]` | list the workspace's files again |
 | `:RemoteSSH grep [pattern]` | live grep (with a pattern: results to quickfix) |
 | `:RemoteSSH symbols` / `outline` | symbols of the current buffer |
 | `:RemoteSSH tree` | toggle the explorer (`?` inside it lists its keys) |
@@ -102,6 +103,18 @@ While a remote workspace is in use, telescope's own `find_files`, `live_grep`
 and `grep_string` search that workspace, so existing mappings such as
 `<leader>ff` keep working; from a local file's buffer they search locally as
 before. Set `telescope = { override_builtins = false }` to turn this off.
+
+Finding files is instant after the first time: the workspace's files are
+listed once, in the background, when it is opened, and the server watches its
+folders so files created, deleted or moved there (from the explorer, a
+terminal, `git checkout`, a build) are added to or removed from the list as
+they change. Folders left out of the listing (`.git`, and with ripgrep
+whatever `.gitignore` excludes) are not watched. If the server cannot watch
+(more than `search.max_files` files, or its inotify watch limit is reached),
+the cached list is still used and refreshed in the background every 30
+seconds. `:RemoteSSH reindex` lists the files again from scratch, for example
+after editing `.gitignore`; `search = { file_cache = false }` lists them on
+every search instead.
 
 The pickers are also available as `:Telescope remote_ssh
 {hosts,recent,files,live_grep,symbols}`. `require("remote-ssh").statusline()`
@@ -191,6 +204,7 @@ require("remote-ssh").setup({
   },
   sources = { ... },           -- download URLs and versions (for mirrors)
   files = { watch = true, max_size = 50 * 1024 * 1024 },
+  search = { file_cache = true, max_files = 200000 },
   reconnect = { auto = true, delays = { 2, 5, 15 } },
 })
 ```
