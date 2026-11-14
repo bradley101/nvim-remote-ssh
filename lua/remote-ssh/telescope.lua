@@ -150,7 +150,11 @@ end
 --- Find files in the remote workspace. opts.conn, opts.root.
 function M.files(opts)
   local conn, root = opts.conn, opts.root
-  search.files(conn, root, function(err, files, truncated)
+  local filecache = require("remote-ssh.filecache")
+  if require("remote-ssh.config").get().search.file_cache and not filecache.ready(conn.host, root) then
+    log.info(("Listing files in %s on '%s'..."):format(root, conn.host))
+  end
+  filecache.get(conn, root, function(err, files, truncated)
     if err then
       return log.error("File search failed: " .. (err.message or err.code))
     end

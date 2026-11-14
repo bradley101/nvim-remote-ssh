@@ -201,6 +201,9 @@ function actions.add(bufnr)
   if err then
     return log.error(("Could not create %s: %s"):format(path, err.message or err.code))
   end
+  if not is_dir then
+    require("remote-ssh.filecache").added(t.host, path)
+  end
   t.expanded[dir] = dir ~= t.root or nil
   local up = P.dirname(path)
   while #up > #dir do
@@ -249,6 +252,7 @@ function actions.rename(bufnr)
     return log.error(("Could not rename %s: %s"):format(node.path, err.message or err.code))
   end
   retarget_buffers(t.host, node.path, to)
+  require("remote-ssh.filecache").renamed(t.host, node.path, to)
   refresh(bufnr)
   focus_path(bufnr, to)
 end
@@ -268,6 +272,11 @@ function actions.copy(bufnr)
   if err then
     return log.error(("Could not copy %s: %s"):format(node.path, err.message or err.code))
   end
+  if node.type == "directory" then
+    require("remote-ssh.filecache").changed(t.host, to)
+  else
+    require("remote-ssh.filecache").added(t.host, to)
+  end
   refresh(bufnr)
   focus_path(bufnr, to)
 end
@@ -286,6 +295,7 @@ function actions.delete(bufnr)
   if err then
     return log.error(("Could not delete %s: %s"):format(node.path, err.message or err.code))
   end
+  require("remote-ssh.filecache").removed(t.host, node.path)
   refresh(bufnr)
 end
 

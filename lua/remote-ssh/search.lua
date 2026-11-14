@@ -13,6 +13,9 @@ local function tool(conn, name)
   return conn.tools[name]
 end
 
+--- Path of a tool on the server (cached per connection), or false.
+M.tool = tool
+
 local function strip(line)
   if line:sub(1, 2) == "./" then
     return line:sub(3)

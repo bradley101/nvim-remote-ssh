@@ -95,6 +95,10 @@ function M.restored(host)
     return
   end
   M.current = M.current or { host = host, root = root }
+  local conn = mod("connection").get(host)
+  if conn and conn.state == "connected" and mod("config").get().search.file_cache then
+    mod("filecache").warm(conn, root)
+  end
   if state.host(host).tree or mod("buffer").tree_wanted[host] then
     mod("buffer").tree_wanted[host] = nil
     local win = api.nvim_get_current_win()
@@ -270,6 +274,9 @@ function M.open(host, path, opts)
     M.workspaces[host] = root
     M.current = { host = host, root = root }
     state.add_recent(host, root)
+    if mod("config").get().search.file_cache then
+      mod("filecache").warm(conn, root) -- in the background, for finding files
+    end
     mod("tree").open(host, root)
     mod("log").info(("Opened %s on '%s'."):format(root, host))
   end)
@@ -307,6 +314,17 @@ function M.disconnect(host)
   end)
 end
 
+--- List the files of host's workspace again (they are cached for finding
+--- files and normally kept up to date by watching the server).
+function M.reindex(host)
+  host = host and host ~= "" and host or (M.context())
+  if not host then
+    return mod("log").warn("No remote workspace is open. Use :RemoteSSH open")
+  end
+  mod("filecache").reset(host)
+  mod("log").info(("Listing the files on '%s' again."):format(host))
+end
+
 function M.reconnect(host)
   host = host and host ~= "" and host or (M.context())
   if not host then
@@ -341,7 +359,7 @@ function M.files()
   if has_telescope() then
     return mod("telescope").files({ conn = conn, root = root })
   end
-  mod("search").files(conn, root, function(err, files, truncated)
+  mod("filecache").get(conn, root, function(err, files, truncated)
     if err then
       return mod("log").error("File search failed: " .. (err.message or err.code))
     end

@@ -753,6 +753,561 @@ handlers["which"] = function(p, respond)
 end
 
 -- ---------------------------------------------------------------------------
+-- File index: the list of files in a workspace, kept current by watching its
+-- folders, so the client can find files without listing them every time.
+--
+-- The first listing is answered in full; after that the client gets
+-- "index.changed" notifications with the files that were added and removed.
+-- The listing is the one the client used to run itself: `rg --files` (which
+-- leaves out .git and whatever .gitignore excludes) or `find` without .git and
+-- node_modules. Only folders that belong to that listing are watched, one
+-- (non-recursive) watch each, so ignored folders such as node_modules or build
+-- output cost nothing.
+-- ---------------------------------------------------------------------------
+local indexes = {}
+local INDEX_DEBOUNCE = 300
+
+--- Run cmd to completion. cb(stdout, code).
+local function collect(cmd, cwd, stdin, cb)
+  local outb = {}
+  local proc, e = spawn(cmd, cwd, nil, {
+    stdout = function(chunk)
+      outb[#outb + 1] = chunk
+    end,
+    stderr = function() end,
+    exit = function(code)
+      cb(table.concat(outb), code)
+    end,
+  })
+  if not proc then
+    return cb("", -1, e)
+  end
+  if stdin then
+    proc.stdin:write(stdin)
+  end
+  proc.stdin:shutdown()
+end
+
+local function rjoin(rel, name)
+  return rel == "" and name or (rel .. "/" .. name)
+end
+
+local function rsplit(rel)
+  local dir, name = rel:match("^(.*)/([^/]*)$")
+  if not dir then
+    return "", rel
+  end
+  return dir, name
+end
+
+local function under(rel, prefix)
+  return prefix == "" or rel == prefix or rel:sub(1, #prefix + 1) == prefix .. "/"
+end
+
+local function ix_abs(ix, rel)
+  if rel == "" then
+    return ix.root
+  end
+  return (ix.root == "/" and "/" or ix.root .. "/") .. rel
+end
+
+--- The path to give a listing command for a folder (never starts with "-").
+local function ix_arg(rel)
+  return rel == "" and "." or ("./" .. rel)
+end
+
+--- Command listing the files under `rels` (relative folders), recursively or
+--- only their direct children.
+local function ix_list_cmd(ix, rels, shallow)
+  local cmd
+  if ix.rg then
+    cmd = { "rg", "--files", "--hidden", "--glob", "!.git", "--color", "never" }
+    if shallow then
+      vim.list_extend(cmd, { "--max-depth", "1" })
+    end
+    cmd[#cmd + 1] = "--"
+    for _, rel in ipairs(rels) do
+      cmd[#cmd + 1] = ix_arg(rel)
+    end
+  else
+    cmd = { "find" }
+    for _, rel in ipairs(rels) do
+      cmd[#cmd + 1] = ix_arg(rel)
+    end
+    if shallow then
+      vim.list_extend(cmd, { "-mindepth", "1", "-maxdepth", "1", "-type", "f", "-print" })
+    else
+      vim.list_extend(cmd, { "-type", "d", "(", "-name", ".git", "-o", "-name", "node_modules", ")", "-prune", "-o", "-type", "f", "-print" })
+    end
+  end
+  return cmd
+end
+
+--- Parse listing output into relative paths.
+local function ix_parse(out)
+  local list = {}
+  for line in out:gmatch("[^\n]+") do
+    if line:sub(1, 2) == "./" then
+      line = line:sub(3)
+    end
+    if line ~= "" and line ~= "." then
+      list[#list + 1] = line
+    end
+  end
+  return list
+end
+
+--- List files under `rels` in batches (keeps command lines short). cb(list).
+local function ix_list(ix, rels, shallow, cb)
+  local all, i = {}, 1
+  local function step()
+    if i > #rels or not indexes[ix.id] then
+      return cb(all)
+    end
+    local batch = {}
+    while i <= #rels and #batch < 500 do
+      batch[#batch + 1] = rels[i]
+      i = i + 1
+    end
+    collect(ix_list_cmd(ix, batch, shallow), ix.root, nil, function(out)
+      vim.list_extend(all, ix_parse(out))
+      vim.schedule(step)
+    end)
+  end
+  step()
+end
+
+local function ix_has(ix, rel)
+  local dir, name = rsplit(rel)
+  local d = ix.dirs[dir]
+  return d ~= nil and d[name] == true
+end
+
+local function ix_add(ix, rel, added)
+  local dir, name = rsplit(rel)
+  local d = ix.dirs[dir]
+  if not d then
+    d = {}
+    ix.dirs[dir] = d
+  end
+  if not d[name] then
+    d[name] = true
+    ix.count = ix.count + 1
+    if added then
+      added[#added + 1] = rel
+    end
+  end
+end
+
+local function ix_del(ix, rel, removed)
+  local dir, name = rsplit(rel)
+  local d = ix.dirs[dir]
+  if d and d[name] then
+    d[name] = nil
+    ix.count = ix.count - 1
+    removed[#removed + 1] = rel
+    if next(d) == nil then
+      ix.dirs[dir] = nil
+    end
+  end
+end
+
+local function ix_unwatch_all(ix)
+  for _, w in pairs(ix.watches) do
+    pcall(w.stop, w)
+    if not w:is_closing() then
+      w:close()
+    end
+  end
+  ix.watches = {}
+end
+
+--- Give up watching (too many files, or the system's watch limit): the
+--- client falls back to listing again now and then.
+local function ix_stop_watching(ix, why)
+  if not ix.watching then
+    return
+  end
+  ix.watching = false
+  ix_unwatch_all(ix)
+  if ix.timer and not ix.timer:is_closing() then
+    ix.timer:stop()
+  end
+  ix.pending, ix.dirty = {}, {}
+  notify("index.changed", { id = ix.id, overflow = true, reason = why })
+end
+
+local ix_queue
+
+local function ix_watch(ix, rel)
+  if not ix.watching or ix.watches[rel] then
+    return
+  end
+  local w = uv.new_fs_event()
+  if not w then
+    return ix_stop_watching(ix, "could not create a watch")
+  end
+  local ok, e = w:start(ix_abs(ix, rel), {}, function(err, name)
+    if err then
+      return
+    end
+    ix_queue(ix, rel, name)
+  end)
+  if not ok then
+    w:close()
+    return ix_stop_watching(ix, tostring(e))
+  end
+  ix.watches[rel] = w
+end
+
+local function ix_unwatch(ix, prefix)
+  for rel, w in pairs(ix.watches) do
+    if under(rel, prefix) then
+      pcall(w.stop, w)
+      if not w:is_closing() then
+        w:close()
+      end
+      ix.watches[rel] = nil
+    end
+  end
+end
+
+--- Of the folders `rels`, the ones the listing leaves out.
+local function ix_ignored(ix, rels, cb)
+  local skip, ask = {}, {}
+  for _, rel in ipairs(rels) do
+    local name = rel:match("([^/]*)$")
+    if name == ".git" or (not ix.rg and name == "node_modules") then
+      skip[rel] = true
+    elseif ix.rg then
+      ask[#ask + 1] = rel
+    end
+  end
+  if #ask == 0 or not ix.git then
+    return cb(skip)
+  end
+  -- rg applies .gitignore without looking at the git index; so does this.
+  collect({ ix.git, "check-ignore", "--no-index", "--stdin" }, ix.root, table.concat(ask, "/\n") .. "/\n", function(out)
+    for line in out:gmatch("[^\n]+") do
+      skip[(line:gsub("/$", ""))] = true
+    end
+    cb(skip)
+  end)
+end
+
+local function ix_subdirs(ix, rel)
+  local list = {}
+  local req = uv.fs_scandir(ix_abs(ix, rel))
+  if not req then
+    return list
+  end
+  while true do
+    local name, t = uv.fs_scandir_next(req)
+    if not name then
+      break
+    end
+    if t == "directory" then
+      list[#list + 1] = rjoin(rel, name)
+    end
+  end
+  return list
+end
+
+--- Folders that are not watched yet (new, moved in, or empty when the index
+--- was built): watch those that belong to the listing, level by level, and
+--- add the files in them. cb(added, fresh) where fresh lists the folders
+--- that are now watched.
+local function ix_discover(ix, rels, cb)
+  local fresh, tops = {}, {}
+  local function level(list, top)
+    local todo = {}
+    for _, rel in ipairs(list) do
+      if not ix.watches[rel] then
+        todo[#todo + 1] = rel
+      end
+    end
+    if #todo == 0 or not ix.watching or not indexes[ix.id] then
+      return vim.schedule(function()
+        if #tops == 0 or not indexes[ix.id] then
+          return cb({}, fresh)
+        end
+        ix_list(ix, tops, false, function(files)
+          local added = {}
+          for _, f in ipairs(files) do
+            ix_add(ix, f, added)
+          end
+          cb(added, fresh)
+        end)
+      end)
+    end
+    ix_ignored(ix, todo, function(skip)
+      vim.schedule(function()
+        local next_level = {}
+        for _, rel in ipairs(todo) do
+          if not skip[rel] then
+            ix_watch(ix, rel)
+            if ix.watches[rel] then
+              fresh[#fresh + 1] = rel
+              if top then
+                tops[#tops + 1] = rel
+              end
+              vim.list_extend(next_level, ix_subdirs(ix, rel))
+            end
+          end
+        end
+        level(next_level, false)
+      end)
+    end)
+  end
+  level(rels, true)
+end
+
+local function ix_flush(ix)
+  if ix.busy or not indexes[ix.id] or not ix.watching then
+    return
+  end
+  local pending, dirty = ix.pending, ix.dirty
+  ix.pending, ix.dirty = {}, {}
+  if next(pending) == nil and next(dirty) == nil then
+    return
+  end
+  ix.busy = true
+  local added, removed = {}, {}
+  local new_dirs = {}
+  for rel in pairs(pending) do
+    local st = uv.fs_lstat(ix_abs(ix, rel))
+    if not st then
+      -- Gone: a file, or a folder with everything in it.
+      ix_del(ix, rel, removed)
+      if ix.watches[rel] then
+        -- Every folder holding indexed files is watched, so only a watched
+        -- folder can take files with it.
+        for dir, names in pairs(ix.dirs) do
+          if under(dir, rel) then
+            for name in pairs(names) do
+              ix_del(ix, rjoin(dir, name), removed)
+            end
+          end
+        end
+        ix_unwatch(ix, rel)
+      end
+    elseif st.type == "directory" and not ix.watches[rel] then
+      new_dirs[#new_dirs + 1] = rel
+    end
+    local parent = rsplit(rel)
+    if rel ~= "" and ix.watches[parent] then
+      dirty[parent] = true
+    end
+  end
+  local shallow = {}
+  for rel in pairs(dirty) do
+    if ix.watches[rel] and uv.fs_stat(ix_abs(ix, rel)) then
+      shallow[#shallow + 1] = rel
+    end
+  end
+
+  local function done(fresh)
+    ix.busy = false
+    if not indexes[ix.id] then
+      return
+    end
+    if ix.count > ix.max then
+      return ix_stop_watching(ix, "too many files")
+    end
+    if #added > 0 or #removed > 0 then
+      notify("index.changed", { id = ix.id, added = added, removed = removed })
+    end
+    -- Files can land in a new folder before its watch starts: look again.
+    for _, rel in ipairs(fresh or {}) do
+      ix.dirty[rel] = true
+    end
+    if next(ix.pending) ~= nil or next(ix.dirty) ~= nil then
+      ix.timer:start(INDEX_DEBOUNCE, 0, function()
+        vim.schedule(function()
+          ix_flush(ix)
+        end)
+      end)
+    end
+  end
+
+  ix_list(ix, shallow, true, function(files)
+    if not indexes[ix.id] then
+      return done()
+    end
+    local now = {}
+    for _, rel in ipairs(shallow) do
+      now[rel] = {}
+    end
+    for _, f in ipairs(files) do
+      local dir, name = rsplit(f)
+      if now[dir] then
+        now[dir][name] = true
+      end
+    end
+    for dir, names in pairs(now) do
+      for name in pairs(names) do
+        ix_add(ix, rjoin(dir, name), added)
+      end
+      for name in pairs(ix.dirs[dir] or {}) do
+        if not names[name] then
+          ix_del(ix, rjoin(dir, name), removed)
+        end
+      end
+    end
+    if #new_dirs == 0 then
+      return done()
+    end
+    ix_discover(ix, new_dirs, function(more, fresh)
+      vim.list_extend(added, more)
+      done(fresh)
+    end)
+  end)
+end
+
+ix_queue = function(ix, rel, name)
+  if not indexes[ix.id] or not ix.watching then
+    return
+  end
+  if name and name ~= "" then
+    ix.pending[rjoin(rel, name)] = true
+  else
+    ix.dirty[rel] = true
+  end
+  if not ix.busy then
+    ix.timer:stop()
+    ix.timer:start(INDEX_DEBOUNCE, 0, function()
+      vim.schedule(function()
+        ix_flush(ix)
+      end)
+    end)
+  end
+end
+
+local function ix_free(ix)
+  indexes[ix.id] = nil
+  ix_unwatch_all(ix)
+  if ix.timer and not ix.timer:is_closing() then
+    ix.timer:stop()
+    ix.timer:close()
+  end
+end
+
+--- params: id, root, rg (use ripgrep), max (most files), watch (default true).
+--- Answers {files, truncated, watching}.
+handlers["index.start"] = function(p, respond)
+  local root = p.root
+  local st = root and uv.fs_stat(root)
+  if not st or st.type ~= "directory" then
+    return respond(fail("ENOENT", "not a folder: " .. tostring(root)))
+  end
+  if indexes[p.id] then
+    ix_free(indexes[p.id])
+  end
+  local git = vim.fn.exepath("git")
+  local ix = {
+    id = p.id,
+    root = root,
+    rg = opt(p.rg) and true or false,
+    git = git ~= "" and git or nil,
+    max = opt(p.max) or 200000,
+    dirs = {},
+    count = 0,
+    watches = {},
+    pending = {},
+    dirty = {},
+    watching = opt(p.watch) ~= false,
+    timer = uv.new_timer(),
+  }
+  indexes[ix.id] = ix
+  local outb, total, truncated = {}, 0, false
+  local max_bytes = ix.max * 120
+  local proc, e
+  proc, e = spawn(ix_list_cmd(ix, { "" }, false), root, nil, {
+    stdout = function(chunk)
+      if truncated then
+        return
+      end
+      total = total + #chunk
+      outb[#outb + 1] = chunk
+      if total > max_bytes then
+        truncated = true
+        pcall(uv.kill, proc.pid, "sigkill")
+      end
+    end,
+    stderr = function() end,
+    exit = function()
+      vim.schedule(function()
+        if indexes[ix.id] ~= ix then
+          return respond(fail("ECANCELED", "index was replaced"))
+        end
+        local files = ix_parse(table.concat(outb))
+        if truncated then
+          files[#files] = nil -- possibly cut mid-line
+        end
+        while #files > ix.max do
+          files[#files] = nil
+          truncated = true
+        end
+        for _, f in ipairs(files) do
+          ix_add(ix, f)
+        end
+        if truncated then
+          ix.watching = false
+        end
+        respond(nil, { files = files, truncated = truncated, watching = ix.watching })
+        if not ix.watching then
+          return
+        end
+        -- Watch the root and every folder that holds a listed file...
+        ix_watch(ix, "")
+        for dir in pairs(ix.dirs) do
+          local d = dir
+          while ix.watching and d ~= "" and not ix.watches[d] do
+            ix_watch(ix, d)
+            d = rsplit(d)
+          end
+        end
+        if not ix.watching then
+          return
+        end
+        -- ...and folders without files yet (only those the listing covers).
+        local others = {}
+        for rel in pairs(ix.watches) do
+          for _, sub in ipairs(ix_subdirs(ix, rel)) do
+            if not ix.watches[sub] then
+              others[#others + 1] = sub
+            end
+          end
+        end
+        ix.busy = true
+        ix_discover(ix, others, function(added)
+          ix.busy = false
+          if #added > 0 then
+            notify("index.changed", { id = ix.id, added = added, removed = {} })
+          end
+          if next(ix.pending) ~= nil or next(ix.dirty) ~= nil then
+            ix_flush(ix)
+          end
+        end)
+      end)
+    end,
+  })
+  if not proc then
+    ix_free(ix)
+    return respond(e)
+  end
+  proc.stdin:shutdown()
+end
+
+handlers["index.stop"] = function(p, respond)
+  local ix = indexes[p.id]
+  if ix then
+    ix_free(ix)
+  end
+  respond(nil, true)
+end
+
+-- ---------------------------------------------------------------------------
 -- Language server installation through mason.nvim (running here, on the
 -- server, so packages are built for and installed on this machine).
 -- ---------------------------------------------------------------------------
