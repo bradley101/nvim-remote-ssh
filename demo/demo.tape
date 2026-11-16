@@ -1,28 +1,43 @@
 # Records the README demo GIF with https://github.com/charmbracelet/vhs
 #   vhs demo/demo.tape
-# Needs a host named "demo" in ~/.ssh/config with a small project in ~/demo,
-# and a Neovim config with telescope.nvim and this plugin loaded.
+# Needs a host "demo" in your ssh config (RSSH_DEMO_SSH_CONFIG to use another
+# config file) with a checkout of Neovim's source in ~/neovim, reached
+# through two jump hosts in the recording. Connect once beforehand so the
+# one-time install prompt is not recorded.
 Output demo/demo.gif
-Set FontSize 16
-Set Width 1200
-Set Height 700
-Set TypingSpeed 60ms
+Set Shell zsh
+Set FontSize 15
+Set Width 1400
+Set Height 800
+Set Padding 16
+Set TypingSpeed 45ms
 
-Type "nvim" Enter
-Sleep 1s
-Type ":RemoteSSH open demo ~/demo" Enter
-Sleep 8s
+Hide
+Type ". demo/truecolor.sh && clear" Enter
+Sleep 500ms
+Type "nvim -u demo/init.lua" Enter
+Sleep 1.5s
+Show
+
+Type ":RemoteSSH open demo ~/neovim"
+Sleep 400ms
+Enter
+Sleep 5s
+
 Type ":RemoteSSH files" Enter
 Sleep 1s
-Type "main"
-Sleep 1s
+Type "eval.c"
+Sleep 1.2s
 Enter
 Sleep 2s
+
 Type ":RemoteSSH grep" Enter
 Sleep 1s
-Type "TODO"
-Sleep 2s
-Escape
+Type "nvim_buf_set_lines"
+Sleep 2.5s
+Down
+Sleep 600ms
+Down
 Sleep 1s
-Type ":RemoteSSH tree" Enter
+Enter
 Sleep 3s
