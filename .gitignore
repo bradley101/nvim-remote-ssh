@@ -1,2 +1,5 @@
 doc/tags
 .DS_Store
+# Rendered by demo/demo.tape; the README embeds an uploaded copy.
+demo/demo.gif
+demo/demo.mp4

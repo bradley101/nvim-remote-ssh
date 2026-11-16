@@ -4,7 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Neovim 0.11+](https://img.shields.io/badge/Neovim-0.11%2B-green.svg?logo=neovim)
 
-![Opening a checkout of Neovim's source through two jump hosts: explorer, find files, symbols, hover and go-to-definition from a language server on the server, live grep, a remote terminal, and reopening the workspace from the recent list](demo/demo.gif)
+https://github.com/user-attachments/assets/18c181f3-b7df-42b0-a2c2-8a186eafef89
+
+*Opening a checkout of Neovim's source through two jump hosts: explorer, find files, symbols, hover and go-to-definition from a language server on the server, live grep, a remote terminal, and reopening the workspace from the recent list.*
 
 Work on a remote machine from your local Neovim, the way VS Code Remote-SSH
 does: your editor, config and plugins stay local; files, search and language
