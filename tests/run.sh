@@ -1,6 +1,6 @@
 #!/bin/sh
 # Runs the test suite against a throwaway local sshd. Needs root (sshd, test
-# user) and nvim, ssh, sshd, python3 on PATH.
+# user) and nvim, ssh, sshd, python3, rg on PATH.
 set -eu
 cd "$(dirname "$0")/.."
 W=${RSSH_TEST_DIR:-/tmp/rssh-test}

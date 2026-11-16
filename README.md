@@ -244,7 +244,7 @@ what changed in each release. Licensed under the [MIT License](LICENSE).
 tests/run.sh
 ```
 
-runs the suite against a throwaway local `sshd` (needs root, `sshd`,
+runs the suite against a throwaway local `sshd` (needs root, `sshd`, `rg`,
 `python3`): direct, jump-host and password logins, connection errors, the
 installer (served from a local fake release server), remote buffers, search,
 symbols, LSP through a fake language server, the explorer, port forwarding
