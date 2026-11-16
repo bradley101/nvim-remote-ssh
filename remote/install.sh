@@ -53,13 +53,30 @@ sha() {
 # fetch URL SUM_URL ASSET DEST
 #   0 ok (verified, or unverified with consent)   1 download failed
 #   2 checksum mismatch                           3 cannot verify
+# gh_digest URL  ->  prints the SHA-256 GitHub publishes for a release asset
+#   (https://github.com/OWNER/REPO/releases/download/TAG/ASSET), for releases
+#   that ship no checksum file of their own.
+gh_digest() {
+  rest=${1#https://github.com/}
+  [ "$rest" != "$1" ] || return 1
+  case $rest in */*/releases/download/*/*) ;; *) return 1 ;; esac
+  repo=${rest%%/releases/download/*}
+  tag=${rest#*/releases/download/}; asset=${tag#*/}; tag=${tag%%/*}
+  dl "https://api.github.com/repos/$repo/releases/tags/$tag" "$TMP/release.json" || return 1
+  tr ',{}' '\n\n\n' <"$TMP/release.json" | awk -v a="$asset" '
+    /"name"[ ]*:/ { n = $0; sub(/^[^:]*:[ ]*"/, "", n); sub(/".*$/, "", n); cur = n }
+    /"digest"[ ]*:[ ]*"sha256:/ && cur == a { d = $0; sub(/^.*sha256:/, "", d); sub(/".*$/, "", d); print d; exit }'
+}
+
 fetch() {
   dl "$1" "$4" || return 1
   unverified() { if [ "${ALLOW_UNVERIFIED:-0}" = 1 ]; then return 0; else return 3; fi; }
-  [ -n "$2" ] || { unverified; return $?; }
-  dl "$2" "$4.sum" || { unverified; return $?; }
-  want=$(grep -F "$3" "$4.sum" | head -n 1 | awk '{print $1}')
-  if [ -z "$want" ] && [ "$(wc -w <"$4.sum" | tr -d ' ')" = 1 ]; then want=$(tr -d ' \n\r' <"$4.sum"); fi
+  want=
+  if [ -n "$2" ] && dl "$2" "$4.sum"; then
+    want=$(grep -F "$3" "$4.sum" | head -n 1 | awk '{print $1}')
+    if [ -z "$want" ] && [ "$(wc -w <"$4.sum" | tr -d ' ')" = 1 ]; then want=$(tr -d ' \n\r' <"$4.sum"); fi
+  fi
+  [ -n "$want" ] || want=$(gh_digest "$1")
   [ -n "$want" ] || { unverified; return $?; }
   have=$(sha "$4") || { unverified; return $?; }
   [ "$want" = "$have" ] && return 0
