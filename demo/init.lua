@@ -3,7 +3,7 @@
 -- point at an ssh config of its own (default: ~/.ssh/config).
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h")
 local lazy = vim.fn.stdpath("data"):gsub("rssh%-demo$", "nvim") .. "/lazy"
-for _, p in ipairs({ "plenary.nvim", "telescope.nvim", "nvim-web-devicons" }) do
+for _, p in ipairs({ "plenary.nvim", "telescope.nvim", "nvim-web-devicons", "nvim-lspconfig" }) do
   vim.opt.rtp:append(lazy .. "/" .. p)
 end
 vim.opt.rtp:prepend(root)
@@ -13,12 +13,17 @@ vim.o.number = true
 vim.o.signcolumn = "yes"
 vim.o.laststatus = 3
 vim.o.showmode = false
+vim.o.hlsearch = false
 vim.o.shortmess = vim.o.shortmess .. "I"
 vim.cmd.colorscheme("habamax")
 
 require("telescope").setup({
   defaults = { sorting_strategy = "ascending", layout_config = { prompt_position = "top" } },
 })
+vim.lsp.enable("lua_ls")
+vim.keymap.set("n", "gd", vim.lsp.buf.definition)
+vim.diagnostic.config({ virtual_text = true })
+
 require("remote-ssh").setup({
   ssh = { config_file = os.getenv("RSSH_DEMO_SSH_CONFIG") },
   open = { window = "same" },
