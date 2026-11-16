@@ -342,6 +342,10 @@ end
 -- ---------------------------------------------------------------------------
 
 local function edit_remote(host, path, lnum, col, cmd)
+  -- Pickers started from the explorer or a terminal would otherwise replace it.
+  if cmd ~= "tabedit" then
+    mod("tree").editor_window()
+  end
   vim.cmd((cmd or "edit") .. " " .. vim.fn.fnameescape(mod("path").uri(host, path)))
   if lnum then
     pcall(api.nvim_win_set_cursor, 0, { lnum, math.max((col or 1) - 1, 0) })

@@ -102,16 +102,23 @@ local function focus_path(bufnr, path)
   end
 end
 
---- Open a file in a non-tree window.
-local function open_file(t, path, how)
-  local target
-  local prev = vim.fn.win_getid(vim.fn.winnr("#"))
+--- Make a window fit for editing files current: the previous window, else
+--- any window of this tab that is not an explorer or a terminal, else a new
+--- one beside the explorer. Does nothing when the current window is fine.
+function M.editor_window()
   local function usable(win)
-    return win ~= 0 and api.nvim_win_is_valid(win) and not M.trees[api.nvim_win_get_buf(win)] and vim.bo[api.nvim_win_get_buf(win)].buftype ~= "terminal"
+    if win == 0 or not api.nvim_win_is_valid(win) then
+      return false
+    end
+    local buf = api.nvim_win_get_buf(win)
+    return not M.trees[buf] and vim.bo[buf].buftype ~= "terminal"
   end
-  if usable(prev) then
-    target = prev
-  else
+  if usable(api.nvim_get_current_win()) then
+    return
+  end
+  local prev = vim.fn.win_getid(vim.fn.winnr("#"))
+  local target = usable(prev) and prev or nil
+  if not target then
     for _, win in ipairs(api.nvim_tabpage_list_wins(0)) do
       if usable(win) then
         target = win
@@ -121,13 +128,18 @@ local function open_file(t, path, how)
   end
   if target then
     api.nvim_set_current_win(target)
-  else
-    vim.cmd("botright vnew")
-    local tree_win = vim.fn.bufwinid(vim.fn.bufnr(("rssh-tree://%s"):format(t.host)))
-    if tree_win ~= -1 then
-      api.nvim_win_set_width(tree_win, config.get().tree.width)
-    end
+    return
   end
+  local tree_win = api.nvim_get_current_win()
+  vim.cmd("botright vnew")
+  if M.trees[api.nvim_win_get_buf(tree_win)] then
+    api.nvim_win_set_width(tree_win, config.get().tree.width)
+  end
+end
+
+--- Open a file in a non-tree window.
+local function open_file(t, path, how)
+  M.editor_window()
   vim.cmd(({ split = "split ", vsplit = "vsplit ", tab = "tabedit " })[how] or "edit " .. vim.fn.fnameescape(P.uri(t.host, path)))
   if how then
     vim.cmd("edit " .. vim.fn.fnameescape(P.uri(t.host, path)))
