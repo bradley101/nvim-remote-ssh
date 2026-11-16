@@ -17,10 +17,12 @@ local NIL = vim.NIL
 local AGENT_VERSION = 1
 local base = (arg and arg[1]) or (uv.os_homedir() .. "/.local/share/nvim-remote-ssh")
 
--- Tools installed by the plugin take part in PATH for everything we spawn.
+-- Tools installed by the plugin take part in PATH for everything we spawn,
+-- and for exepath(). Set through vim.env: uv.os_setenv() alone is not seen
+-- by Neovim's own environment functions (exepath() keeps the old PATH).
 do
   local path = os.getenv("PATH") or "/usr/local/bin:/usr/bin:/bin"
-  uv.os_setenv("PATH", base .. "/bin:" .. base .. "/mason/bin:" .. path)
+  vim.env.PATH = base .. "/bin:" .. base .. "/mason/bin:" .. path
 end
 
 local function opt(v)
