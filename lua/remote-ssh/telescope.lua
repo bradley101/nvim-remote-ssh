@@ -23,7 +23,11 @@ local function on_select(prompt_bufnr, open)
       local entry = action_state.get_selected_entry()
       actions.close(prompt_bufnr)
       if entry then
-        open(entry, cmd)
+        -- After the prompt has left insert mode, which moves the cursor one
+        -- column left: otherwise a match's column ends up off by one.
+        vim.schedule(function()
+          open(entry, cmd)
+        end)
       end
     end
   end
@@ -270,10 +274,14 @@ function M.symbols(opts)
         actions.select_default:replace(function()
           local entry = action_state.get_selected_entry()
           actions.close(prompt_bufnr)
-          if entry and api.nvim_win_is_valid(source_win) then
-            api.nvim_set_current_win(source_win)
-            api.nvim_win_set_cursor(source_win, { entry.lnum, entry.col - 1 })
-            vim.cmd("normal! zz")
+          if entry then
+            vim.schedule(function()
+              if api.nvim_win_is_valid(source_win) then
+                api.nvim_set_current_win(source_win)
+                api.nvim_win_set_cursor(source_win, { entry.lnum, entry.col - 1 })
+                vim.cmd("normal! zz")
+              end
+            end)
           end
         end)
         return true
