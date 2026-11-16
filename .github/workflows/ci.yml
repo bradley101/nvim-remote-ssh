@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+      - name: Install sshd
+        run: sudo apt-get update && sudo apt-get install -y openssh-server python3
+      - name: Run the test suite
+        run: sudo env "PATH=$PATH" tests/run.sh

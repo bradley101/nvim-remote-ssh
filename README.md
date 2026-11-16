@@ -1,5 +1,9 @@
 # nvim-remote-ssh
 
+[![CI](https://github.com/bradley101/nvim-remote-ssh/actions/workflows/ci.yml/badge.svg)](https://github.com/bradley101/nvim-remote-ssh/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Neovim 0.11+](https://img.shields.io/badge/Neovim-0.11%2B-green.svg?logo=neovim)
+
 Work on a remote machine from your local Neovim, the way VS Code Remote-SSH
 does: your editor, config and plugins stay local; files, search and language
 servers live on the server.
@@ -11,6 +15,15 @@ servers live on the server.
  remote agent (headless Neovim) ── file I/O, file watching, ripgrep,
                                    language servers, mason
 ```
+
+## Why this and not...
+
+| | Your config | What runs where |
+|---|---|---|
+| **sshfs / a mounted folder** | local | Neovim, search and language servers run locally and read every file over the network: slow grep, slow LSP indexing |
+| **netrw `scp://`** | local | file transfer only; no project search, no remote LSP |
+| **Neovim over ssh on the server** | the server's | your config and plugins have to be installed there; every keystroke waits on the network |
+| **nvim-remote-ssh** | local | UI local; file I/O, ripgrep, file watching and language servers on the server |
 
 ## Features
 
@@ -219,6 +232,11 @@ require("remote-ssh").setup({
 - The protocol is one-way: the client sends requests, the agent answers. A
   compromised server cannot run commands in your Neovim. File contents and
   language-server messages from the server are, of course, shown to you.
+
+## Contributing
+
+Issues and pull requests are welcome. See [CHANGELOG.md](CHANGELOG.md) for
+what changed in each release. Licensed under the [MIT License](LICENSE).
 
 ## Development
 
