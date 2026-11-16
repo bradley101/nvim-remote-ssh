@@ -6,6 +6,7 @@
 # there (open a Lua file once and accept the install). Connect once
 # beforehand so the one-time install prompt is not recorded.
 Output demo/demo.gif
+Output demo/demo.mp4
 Set Shell zsh
 Set FontSize 15
 Set Width 1400
